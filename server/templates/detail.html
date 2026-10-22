@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Chi tiết ảnh #{{ image.id }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <h1>Chi tiết ảnh #{{ image.id }}</h1>
+  <nav><a href="/">Gallery</a><a href="/config">Cấu hình</a></nav>
+</header>
+<main>
+  <img src="/{{ image.file_path }}" style="max-width:100%; border-radius:8px;">
+  <table>
+    <tr><td>Tên file</td><td>{{ image.file_name }}</td></tr>
+    <tr><td>Chụp lúc</td><td>{{ image.capture_time }}</td></tr>
+    <tr><td>Nhận lúc</td><td>{{ image.received_time }}</td></tr>
+    <tr><td>Kích thước</td><td>{{ image.file_size_kb }} KB</td></tr>
+    <tr><td>Độ phân giải</td><td>{{ image.width }}×{{ image.height }}</td></tr>
+  </table>
+  <p><button onclick="del({{ image.id }})">🗑️ Xóa ảnh này</button></p>
+</main>
+<script>
+async function del(id) {
+  if (!confirm('Xóa ảnh này?')) return;
+  const r = await fetch(`/api/images/${id}`, {method: 'DELETE'});
+  if (r.ok) location.href = '/';
+  else alert('Lỗi xóa ảnh');
+}
+</script>
+</body>
+</html>

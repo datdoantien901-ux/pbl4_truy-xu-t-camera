@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Camera Gallery</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <h1>📷 Camera Gallery</h1>
+  <nav><a href="/">Gallery</a><a href="/config">Cấu hình</a></nav>
+</header>
+<main>
+  <div id="gallery" class="gallery"></div>
+  <div id="pager"></div>
+</main>
+<script>
+const PER_PAGE = 20;
+let page = 1;
+
+async function loadGallery(p) {
+  page = p;
+  const res = await fetch(`/api/images?page=${p}&per_page=${PER_PAGE}`);
+  const data = await res.json();
+  const g = document.getElementById('gallery');
+  g.innerHTML = '';
+  if (data.items.length === 0) {
+    g.innerHTML = '<p>Chưa có ảnh nào.</p>';
+  }
+  for (const it of data.items) {
+    const a = document.createElement('a');
+    a.href = `/image/${it.id}`;
+    a.className = 'card';
+    a.innerHTML = `
+      <img src="/${it.file_path}" alt="${it.file_name}">
+      <div class="meta">
+        <div>#${it.id} · ${it.file_size_kb} KB</div>
+        <div>${it.capture_time || ''}</div>
+      </div>`;
+    g.appendChild(a);
+  }
+  const pager = document.getElementById('pager');
+  pager.innerHTML = '';
+  if (data.total_pages > 1) {
+    const prev = document.createElement('button');
+    prev.textContent = '← Trước';
+    prev.disabled = page <= 1;
+    prev.onclick = () => loadGallery(page - 1);
+    const info = document.createElement('span');
+    info.textContent = `  Trang ${page}/${data.total_pages} (${data.total} ảnh)  `;
+    const next = document.createElement('button');
+    next.textContent = 'Sau →';
+    next.disabled = page >= data.total_pages;
+    next.onclick = () => loadGallery(page + 1);
+    pager.append(prev, info, next);
+  }
+}
+
+loadGallery(1);
+// Tự động refresh mỗi 10 giây để thấy ảnh mới (real-time gallery)
+setInterval(() => loadGallery(page), 10000);
+</script>
+</body>
+</html>
