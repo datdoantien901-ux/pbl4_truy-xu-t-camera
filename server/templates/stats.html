@@ -1,0 +1,83 @@
+{% extends '_layout.html' %}
+{% block title %}Thống kê độ trễ{% endblock %}
+{% block heading %}📊 Thống kê & kiểm thử{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <label>Số ảnh gần nhất:
+    <select id="limit"><option>20</option><option selected>50</option><option>100</option><option>500</option></select>
+  </label>
+  <button id="csv">⬇️ Tải CSV</button>
+  <span class="muted">Tự cập nhật mỗi 5 giây</span>
+</div>
+
+<p class="note">⚠️ Client và Server chạy trên 2 máy khác nhau phải <b>đồng bộ đồng hồ (NTP)</b>,
+  nếu không độ trễ sẽ bị cộng/trừ thêm độ lệch đồng hồ giữa hai máy.
+  Độ trễ "chụp → hiển thị" chỉ có khi trang Gallery đang mở.</p>
+
+<table class="list">
+  <thead><tr><th>Chỉ số (giây)</th><th>Số mẫu</th><th>Trung bình</th><th>Nhỏ nhất</th><th>Lớn nhất</th><th>P95</th></tr></thead>
+  <tbody id="summary"></tbody>
+</table>
+
+<h2>Chi tiết từng ảnh</h2>
+<table class="list">
+  <thead><tr><th>ID</th><th>Client</th><th>Chụp lúc</th><th>Interval cấu hình</th><th>Interval thực tế</th>
+             <th>Truyền mạng</th><th>Chụp → nhận</th><th>Chụp → hiển thị</th><th>KB</th></tr></thead>
+  <tbody id="items"></tbody>
+</table>
+{% endblock %}
+{% block scripts %}
+<script>
+const LABELS = {
+  sent_to_received:    'Truyền qua mạng (Client gửi → Server nhận)',
+  capture_to_received: 'Chụp → Server nhận',
+  capture_to_display:  'Chụp → hiển thị trên Website',
+  actual_gap:          'Khoảng cách thực tế giữa 2 lần chụp',
+};
+let last = null;
+
+async function load() {
+  const limit = document.getElementById('limit').value;
+  last = await (await fetch('/api/stats?limit=' + limit)).json();
+
+  const sb = document.getElementById('summary');
+  sb.replaceChildren();
+  for (const [k, label] of Object.entries(LABELS)) {
+    const s = last.summary[k];
+    sb.append(el('tr', {}, el('td', {}, label),
+      ...(s ? [s.count, s.avg, s.min, s.max, s.p95].map(v => el('td', {}, v))
+            : [el('td', {colspan: 5, class: 'muted'}, 'chưa có dữ liệu')])));
+  }
+
+  const tb = document.getElementById('items');
+  tb.replaceChildren();
+  for (const it of last.items) {
+    const off = it.actual_gap !== null && it.interval_used &&
+                Math.abs(it.actual_gap - it.interval_used) > 1;
+    tb.append(el('tr', {},
+      el('td', {}, el('a', {href: `/image/${it.id}`}, '#' + it.id)),
+      el('td', {}, it.client_id || '—'),
+      el('td', {}, fmtTime(it.capture_time)),
+      el('td', {}, it.interval_used ? it.interval_used + ' s' : '—'),
+      el('td', {class: off ? 'warn' : ''}, fmtSec(it.actual_gap)),
+      el('td', {}, fmtSec(it.sent_to_received)),
+      el('td', {}, fmtSec(it.capture_to_received)),
+      el('td', {}, fmtSec(it.capture_to_display)),
+      el('td', {}, it.file_size_kb)));
+  }
+}
+
+document.getElementById('csv').onclick = () => {
+  if (!last) return;
+  const cols = ['id', 'client_id', 'capture_time', 'interval_used', 'actual_gap',
+                'sent_to_received', 'capture_to_received', 'capture_to_display', 'file_size_kb'];
+  const lines = [cols.join(',')].concat(last.items.map(i => cols.map(c => i[c] ?? '').join(',')));
+  const a = el('a', {href: URL.createObjectURL(new Blob([lines.join('\n')], {type: 'text/csv'})),
+                     download: 'latency_stats.csv'});
+  a.click();
+};
+document.getElementById('limit').onchange = load;
+load();
+setInterval(load, 5000);
+</script>
+{% endblock %}

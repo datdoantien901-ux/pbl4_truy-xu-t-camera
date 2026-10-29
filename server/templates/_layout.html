@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Camera{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <h1>{% block heading %}📷 Camera{% endblock %}</h1>
+  <nav>
+    <a href="/" class="{{ 'active' if request.path == '/' }}">Gallery</a>
+    <a href="/manage" class="{{ 'active' if request.path == '/manage' }}">Quản lý</a>
+    <a href="/config" class="{{ 'active' if request.path == '/config' }}">Cấu hình</a>
+    <a href="/stats" class="{{ 'active' if request.path == '/stats' }}">Thống kê</a>
+  </nav>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+<script>
+// Tiện ích chung: tạo phần tử DOM an toàn (dùng textContent, không dùng innerHTML với dữ liệu)
+function el(tag, attrs = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (c === null || c === undefined) continue;
+    e.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return e;
+}
+function fmtTime(s) { return s ? s.replace('T', ' ') : ''; }
+function fmtSec(v) { return (v === null || v === undefined) ? '—' : v.toFixed(3) + ' s'; }
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

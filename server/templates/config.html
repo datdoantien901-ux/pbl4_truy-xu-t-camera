@@ -1,67 +1,72 @@
-<!doctype html>
-<html lang="vi">
-<head>
-<meta charset="utf-8">
-<title>Cấu hình Client</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-<header>
-  <h1>⚙️ Cấu hình thu nhận</h1>
-  <nav><a href="/">Gallery</a><a href="/config">Cấu hình</a></nav>
-</header>
-<main>
-  <form id="f">
-    <label>Tần suất chụp (giây):
-      <input type="number" name="capture_interval" min="1" max="3600">
-    </label>
-    <label>Chất lượng JPEG (10–100):
-      <input type="number" name="jpeg_quality" min="10" max="100">
-    </label>
-    <label>Chiều rộng resize (px):
-      <input type="number" name="resize_width" min="160" max="3840">
-    </label>
-    <label>Số ảnh lưu tối đa:
-      <input type="number" name="max_images" min="1" max="10000">
-      <small style="color:#666">(ảnh cũ nhất sẽ bị xóa khi vượt)</small>
-    </label>
-    <button type="submit">💾 Lưu cấu hình</button>
-  </form>
-  <p id="msg"></p>
-</main>
+{% extends '_layout.html' %}
+{% block title %}Cấu hình Client{% endblock %}
+{% block heading %}⚙️ Cấu hình thu nhận{% endblock %}
+{% block content %}
+<form id="f">
+  <label>Tần suất chụp (giây):
+    <input type="number" name="capture_interval" min="1" max="3600" required>
+  </label>
+  <label>Chất lượng JPEG (10–100):
+    <input type="number" name="jpeg_quality" min="10" max="100" required>
+  </label>
+  <label>Chiều rộng resize (px):
+    <input type="number" name="resize_width" min="160" max="3840" required>
+  </label>
+  <label>Số ảnh lưu tối đa trên server:
+    <input type="number" name="max_images" min="1" max="10000" required>
+    <small class="muted">(ảnh cũ nhất sẽ bị xóa khi vượt)</small>
+  </label>
+  <button type="submit">💾 Lưu cấu hình</button>
+</form>
+<p id="msg"></p>
+
+<h2>Lịch sử thay đổi</h2>
+<p class="muted">Dùng làm minh chứng kiểm thử điều khiển từ xa: so sánh thời điểm đổi ở đây với log
+  <code>[CONFIG] Áp dụng cấu hình mới</code> của Client và cột "interval thực tế" ở trang Thống kê.</p>
+<table class="list">
+  <thead><tr><th>Thời điểm</th><th>Tham số</th><th>Cũ</th><th>Mới</th><th>Bởi (IP)</th></tr></thead>
+  <tbody id="history"></tbody>
+</table>
+{% endblock %}
+{% block scripts %}
 <script>
+const FIELDS = ['capture_interval', 'jpeg_quality', 'resize_width', 'max_images'];
+const f = document.getElementById('f');
+const msg = document.getElementById('msg');
+
 async function load() {
-  const r = await fetch('/api/config');
-  const c = await r.json();
-  const f = document.getElementById('f');
-  f.capture_interval.value = c.capture_interval;
-  f.jpeg_quality.value     = c.jpeg_quality;
-  f.resize_width.value     = c.resize_width;
-  f.max_images.value       = c.max_images;
-  document.getElementById('msg').textContent = 'Cập nhật lần cuối: ' + c.updated_at;
+  const c = await (await fetch('/api/config')).json();
+  for (const k of FIELDS) f[k].value = c[k];
+  msg.textContent = 'Cập nhật lần cuối: ' + fmtTime(c.updated_at);
+  loadHistory();
 }
 
-document.getElementById('f').addEventListener('submit', async (e) => {
+async function loadHistory() {
+  const rows = await (await fetch('/api/config/history?limit=30')).json();
+  const tb = document.getElementById('history');
+  tb.replaceChildren();
+  if (!rows.length) tb.append(el('tr', {}, el('td', {colspan: 5, class: 'muted'}, 'Chưa có thay đổi nào.')));
+  for (const r of rows)
+    tb.append(el('tr', {}, el('td', {}, fmtTime(r.changed_at)), el('td', {}, r.field),
+                 el('td', {}, r.old_value), el('td', {}, r.new_value), el('td', {}, r.changed_by || '')));
+}
+
+f.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const fd = new FormData(e.target);
-  const body = {
-    capture_interval: parseInt(fd.get('capture_interval')),
-    jpeg_quality:     parseInt(fd.get('jpeg_quality')),
-    resize_width:     parseInt(fd.get('resize_width')),
-    max_images:       parseInt(fd.get('max_images')),
-  };
+  const body = {};
+  for (const k of FIELDS) body[k] = parseInt(f[k].value);
   const r = await fetch('/api/config', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
   const j = await r.json();
-  document.getElementById('msg').textContent =
-    r.ok ? '✅ Đã lưu. Client sẽ áp dụng trong vòng polling tiếp theo.' : '❌ ' + (j.error || r.status);
+  msg.textContent = r.ok
+    ? '✅ Đã lưu lúc ' + fmtTime(j.updated_at) + '. Client sẽ áp dụng ở lần lấy cấu hình tiếp theo (tối đa ~10 giây).'
+    : '❌ ' + (j.error || r.status);
+  loadHistory();
 });
 
 load();
 </script>
-</body>
-</html>
-
+{% endblock %}

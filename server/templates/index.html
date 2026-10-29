@@ -1,64 +1,76 @@
-<!doctype html>
-<html lang="vi">
-<head>
-<meta charset="utf-8">
-<title>Camera Gallery</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-<header>
-  <h1>📷 Camera Gallery</h1>
-  <nav><a href="/">Gallery</a><a href="/config">Cấu hình</a></nav>
-</header>
-<main>
-  <div id="gallery" class="gallery"></div>
-  <div id="pager"></div>
-</main>
+{% extends '_layout.html' %}
+{% block title %}Camera Gallery{% endblock %}
+{% block heading %}📷 Camera Gallery{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <span id="clients" class="muted">Đang kiểm tra Client…</span>
+  <label class="muted"><input type="checkbox" id="live" checked> Tự cập nhật (2 giây)</label>
+</div>
+<div id="gallery" class="gallery"></div>
+<div id="pager"></div>
+{% endblock %}
+{% block scripts %}
 <script>
 const PER_PAGE = 20;
+const REFRESH_MS = 2000;   // chu kỳ làm mới gallery (ảnh hưởng trực tiếp tới độ trễ chụp → hiển thị)
 let page = 1;
+let lastSignature = null;
 
 async function loadGallery(p) {
   page = p;
   const res = await fetch(`/api/images?page=${p}&per_page=${PER_PAGE}`);
   const data = await res.json();
+
+  // Không vẽ lại nếu không có ảnh mới (tránh nháy màn hình)
+  const signature = p + ':' + data.items.map(i => i.id).join(',');
+  if (signature === lastSignature) return;
+  lastSignature = signature;
+
   const g = document.getElementById('gallery');
-  g.innerHTML = '';
-  if (data.items.length === 0) {
-    g.innerHTML = '<p>Chưa có ảnh nào.</p>';
-  }
+  g.replaceChildren();
+  if (data.items.length === 0) g.append(el('p', {}, 'Chưa có ảnh nào.'));
+
   for (const it of data.items) {
-    const a = document.createElement('a');
-    a.href = `/image/${it.id}`;
-    a.className = 'card';
-    a.innerHTML = `
-      <img src="/${it.file_path}" alt="${it.file_name}">
-      <div class="meta">
-        <div>#${it.id} · ${it.file_size_kb} KB</div>
-        <div>${it.capture_time || ''}</div>
-      </div>`;
-    g.appendChild(a);
+    const img = el('img', {src: '/' + it.file_path, alt: it.file_name, loading: 'lazy'});
+    // Ảnh hiện lên màn hình lần đầu → báo server để đo độ trễ chụp → hiển thị
+    if (!it.displayed_time) {
+      img.addEventListener('load', () => {
+        if (document.visibilityState === 'visible')
+          fetch(`/api/images/${it.id}/displayed`, {method: 'POST'});
+      }, {once: true});
+    }
+    g.append(el('a', {href: `/image/${it.id}`, class: 'card'},
+      img,
+      el('div', {class: 'meta'},
+        el('div', {}, `#${it.id} · ${it.file_size_kb} KB · ${it.client_id || ''}`),
+        el('div', {}, fmtTime(it.capture_time)))));
   }
+
   const pager = document.getElementById('pager');
-  pager.innerHTML = '';
+  pager.replaceChildren();
   if (data.total_pages > 1) {
-    const prev = document.createElement('button');
-    prev.textContent = '← Trước';
-    prev.disabled = page <= 1;
-    prev.onclick = () => loadGallery(page - 1);
-    const info = document.createElement('span');
-    info.textContent = `  Trang ${page}/${data.total_pages} (${data.total} ảnh)  `;
-    const next = document.createElement('button');
-    next.textContent = 'Sau →';
-    next.disabled = page >= data.total_pages;
-    next.onclick = () => loadGallery(page + 1);
-    pager.append(prev, info, next);
+    pager.append(
+      el('button', {onclick: () => loadGallery(page - 1), ...(page <= 1 ? {disabled: ''} : {})}, '← Trước'),
+      el('span', {}, `  Trang ${page}/${data.total_pages} (${data.total} ảnh)  `),
+      el('button', {onclick: () => loadGallery(page + 1), ...(page >= data.total_pages ? {disabled: ''} : {})}, 'Sau →'));
   }
 }
 
+async function loadClients() {
+  const span = document.getElementById('clients');
+  try {
+    const list = await (await fetch('/api/clients')).json();
+    if (!list.length) { span.textContent = 'Chưa có Client nào kết nối.'; return; }
+    span.replaceChildren(...list.map(c => el('span', {class: 'badge ' + (c.online ? 'ok' : 'off')},
+      `${c.online ? '●' : '○'} ${c.client_id} (${c.ip}) — ${c.online ? 'online' : c.seconds_ago + 's trước'}`)));
+  } catch { span.textContent = 'Không lấy được trạng thái Client'; }
+}
+
 loadGallery(1);
-// Tự động refresh mỗi 10 giây để thấy ảnh mới (real-time gallery)
-setInterval(() => loadGallery(page), 10000);
+loadClients();
+setInterval(() => {
+  if (document.getElementById('live').checked && page === 1) loadGallery(1);
+}, REFRESH_MS);
+setInterval(loadClients, 5000);
 </script>
-</body>
-</html>
+{% endblock %}

@@ -1,0 +1,98 @@
+{% extends '_layout.html' %}
+{% block title %}Quản lý ảnh{% endblock %}
+{% block heading %}🗂️ Quản lý ảnh{% endblock %}
+{% block content %}
+<form id="filter" class="filter">
+  <label>Từ <input type="datetime-local" name="start" step="1"></label>
+  <label>Đến <input type="datetime-local" name="end" step="1"></label>
+  <label>Tên file / Client <input type="text" name="q" placeholder="vd: client-01"></label>
+  <button type="submit">🔍 Tìm</button>
+  <button type="button" id="reset">Xóa lọc</button>
+</form>
+
+<div class="toolbar">
+  <span id="summary" class="muted"></span>
+  <button id="delSelected" disabled>🗑️ Xóa ảnh đã chọn</button>
+</div>
+
+<table class="list">
+  <thead>
+    <tr><th><input type="checkbox" id="all"></th><th>Ảnh</th><th>ID</th><th>Chụp lúc</th>
+        <th>Client</th><th>Kích thước</th><th>Độ phân giải</th><th></th></tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+<div id="pager"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const PER_PAGE = 25;
+let page = 1;
+const form = document.getElementById('filter');
+
+function query() {
+  const fd = new FormData(form);
+  const p = new URLSearchParams({page, per_page: PER_PAGE});
+  for (const k of ['start', 'end', 'q']) if (fd.get(k)) p.set(k, fd.get(k));
+  return p;
+}
+
+async function load(p = 1) {
+  page = p;
+  const data = await (await fetch('/api/images?' + query())).json();
+  document.getElementById('summary').textContent = `Tìm thấy ${data.total} ảnh`;
+  const tbody = document.getElementById('rows');
+  tbody.replaceChildren();
+  if (!data.items.length)
+    tbody.append(el('tr', {}, el('td', {colspan: 8, class: 'muted'}, 'Không có ảnh phù hợp.')));
+
+  for (const it of data.items) {
+    tbody.append(el('tr', {},
+      el('td', {}, el('input', {type: 'checkbox', class: 'pick', value: it.id, onchange: updateBtn})),
+      el('td', {}, el('a', {href: `/image/${it.id}`}, el('img', {src: '/' + it.file_path, class: 'thumb', loading: 'lazy'}))),
+      el('td', {}, '#' + it.id),
+      el('td', {}, fmtTime(it.capture_time)),
+      el('td', {}, it.client_id || '—'),
+      el('td', {}, it.file_size_kb + ' KB'),
+      el('td', {}, it.width && it.height ? `${it.width}×${it.height}` : '—'),
+      el('td', {},
+        el('a', {href: `/image/${it.id}`}, 'Chi tiết'), ' · ',
+        el('a', {href: '#', onclick: (e) => { e.preventDefault(); del([it.id]); }}, 'Xóa'))));
+  }
+  document.getElementById('all').checked = false;
+  updateBtn();
+
+  const pager = document.getElementById('pager');
+  pager.replaceChildren();
+  if (data.total_pages > 1) {
+    pager.append(
+      el('button', {onclick: () => load(page - 1), ...(page <= 1 ? {disabled: ''} : {})}, '← Trước'),
+      el('span', {}, `  Trang ${page}/${data.total_pages}  `),
+      el('button', {onclick: () => load(page + 1), ...(page >= data.total_pages ? {disabled: ''} : {})}, 'Sau →'));
+  }
+}
+
+function picked() { return [...document.querySelectorAll('.pick:checked')].map(c => +c.value); }
+function updateBtn() {
+  const n = picked().length;
+  const b = document.getElementById('delSelected');
+  b.disabled = n === 0;
+  b.textContent = n ? `🗑️ Xóa ${n} ảnh đã chọn` : '🗑️ Xóa ảnh đã chọn';
+}
+
+async function del(ids) {
+  if (!confirm(`Xóa ${ids.length} ảnh?`)) return;
+  await Promise.all(ids.map(id => fetch(`/api/images/${id}`, {method: 'DELETE'})));
+  load(page);
+}
+
+form.addEventListener('submit', (e) => { e.preventDefault(); load(1); });
+document.getElementById('reset').onclick = () => { form.reset(); load(1); };
+document.getElementById('all').onchange = (e) => {
+  document.querySelectorAll('.pick').forEach(c => c.checked = e.target.checked);
+  updateBtn();
+};
+document.getElementById('delSelected').onclick = () => del(picked());
+load(1);
+</script>
+{% endblock %}

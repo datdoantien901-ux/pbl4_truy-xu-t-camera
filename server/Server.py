@@ -1,33 +1,114 @@
+"""
+Web Server / RESTful API nhận và quản lý ảnh từ Client.
+
+API ảnh:
+    POST   /api/images                 nhận ảnh mới (multipart/form-data)
+    GET    /api/images                 danh sách (phân trang, lọc theo thời gian)
+    GET    /api/images/<id>            chi tiết 1 ảnh
+    DELETE /api/images/<id>            xóa ảnh
+    POST   /api/images/<id>/displayed  trình duyệt báo ảnh đã hiển thị (đo độ trễ)
+API cấu hình từ xa:
+    GET    /api/config                 Client định kỳ gọi để lấy cấu hình mới nhất
+    POST   /api/config                 Website thiết lập tham số
+    GET    /api/config/history         lịch sử thay đổi cấu hình
+Giám sát / kiểm thử:
+    GET    /api/stats                  thống kê độ trễ, chu kỳ chụp thực tế
+    GET    /api/clients                các Client đang kết nối (IP, lần cuối thấy)
+Web: /  (gallery real-time)   /manage   /config   /stats   /image/<id>
+
+Chạy:  python Server.py               (mặc định lắng nghe 0.0.0.0:5000, debug tắt)
+       PBL4_PORT=8000 python Server.py
+"""
+import logging
 import os
 import sqlite3
+import statistics
 import uuid
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template, send_from_directory, abort
+from logging.handlers import RotatingFileHandler
+
+from flask import Flask, abort, jsonify, render_template, request, send_from_directory
 from flask_cors import CORS
 
 # ============ CẤU HÌNH ============
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
-DB_PATH = os.path.join(BASE_DIR, 'server.db')
+LOG_DIR = os.path.join(BASE_DIR, 'logs')
+DB_PATH = os.environ.get('PBL4_DB', os.path.join(BASE_DIR, 'server.db'))
+
+ALLOWED_EXT = ('.jpg', '.jpeg', '.png')
+CONFIG_LIMITS = [  # (tên, min, max)
+    ('capture_interval', 1, 3600),
+    ('jpeg_quality', 10, 100),
+    ('resize_width', 160, 3840),
+    ('max_images', 1, 10000),
+]
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(LOG_DIR, exist_ok=True)
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB/ảnh
 CORS(app)
 
+# ============ LOG ============
+log = logging.getLogger('server')
+if not log.handlers:
+    _h = RotatingFileHandler(os.path.join(LOG_DIR, 'server.log'),
+                             maxBytes=2 * 1024 * 1024, backupCount=5, encoding='utf-8')
+    _h.setFormatter(logging.Formatter('%(asctime)s [%(threadName)s] %(levelname)s: %(message)s'))
+    log.addHandler(_h)
+    log.addHandler(logging.StreamHandler())
+    log.setLevel(logging.INFO)
+
+
+# ============ THỜI GIAN ============
+def now_iso():
+    return datetime.now().isoformat(timespec='milliseconds')
+
+
+def parse_time(value):
+    """Chấp nhận '2026-10-13 10:17:07', '2026-10-13T10:17:07', '...07.512', '2026-10-13T10:17'."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).strip().replace(' ', 'T'))
+    except ValueError:
+        return None
+
+
+def normalize_time(value):
+    """Mọi thời gian lưu trong DB đều dạng ISO 'YYYY-MM-DDTHH:MM:SS.mmm' để so sánh chuỗi đúng."""
+    dt = parse_time(value)
+    return dt.isoformat(timespec='milliseconds') if dt else None
+
+
+def seconds_between(a, b):
+    da, db = parse_time(a), parse_time(b)
+    if da is None or db is None:
+        return None
+    return round((db - da).total_seconds(), 3)
+
 
 # ============ DATABASE ============
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _add_column(cur, table, col, decl):
+    cols = {r[1] for r in cur.execute(f'PRAGMA table_info({table})')}
+    if col not in cols:
+        cur.execute(f'ALTER TABLE {table} ADD COLUMN {col} {decl}')
+        log.info('Đã thêm cột %s.%s', table, col)
 
 
 def init_db():
     conn = get_db()
     cur = conn.cursor()
+    cur.execute('PRAGMA journal_mode=WAL')  # nhiều request đồng thời đọc/ghi không khóa nhau
 
     cur.execute('''
         CREATE TABLE IF NOT EXISTS images (
@@ -41,6 +122,18 @@ def init_db():
             height        INTEGER
         )
     ''')
+    # Các cột mới (tự thêm nếu DB cũ chưa có)
+    for col, decl in [('sent_time', 'TEXT'), ('displayed_time', 'TEXT'),
+                      ('client_id', 'TEXT'), ('client_capture_id', 'INTEGER'),
+                      ('client_ip', 'TEXT'), ('original_name', 'TEXT'), ('source', 'TEXT'),
+                      ('interval_used', 'INTEGER'), ('quality_used', 'INTEGER')]:
+        _add_column(cur, 'images', col, decl)
+    cur.execute('CREATE INDEX IF NOT EXISTS idx_images_capture ON images(capture_time)')
+    cur.execute('''CREATE INDEX IF NOT EXISTS idx_images_client_capture
+                   ON images(client_id, client_capture_id)''')
+    # Dữ liệu cũ lưu '2026-10-13 10:17:07' → đổi sang ISO để lọc theo thời gian chạy đúng
+    cur.execute("UPDATE images SET capture_time = REPLACE(capture_time, ' ', 'T') "
+                "WHERE capture_time LIKE '____-__-__ %'")
 
     cur.execute('''
         CREATE TABLE IF NOT EXISTS config (
@@ -52,24 +145,44 @@ def init_db():
             updated_at       TEXT
         )
     ''')
-
-    # Tự động thêm cột max_images nếu DB cũ chưa có
-    try:
-        cur.execute('ALTER TABLE config ADD COLUMN max_images INTEGER DEFAULT 100')
-        print('+ Da them cot max_images vao bang config')
-    except sqlite3.OperationalError:
-        pass  # Cột đã tồn tại
-
-    # Chỉ có 1 dòng config
+    _add_column(cur, 'config', 'max_images', 'INTEGER DEFAULT 100')
     cur.execute('''
         INSERT OR IGNORE INTO config
             (id, capture_interval, jpeg_quality, resize_width, max_images, updated_at)
         VALUES (1, 5, 80, 854, 100, ?)
-    ''', (datetime.now().isoformat(timespec='seconds'),))
+    ''', (now_iso(),))
 
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS config_history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            changed_at TEXT NOT NULL,
+            field      TEXT NOT NULL,
+            old_value  INTEGER,
+            new_value  INTEGER,
+            changed_by TEXT
+        )
+    ''')
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS clients (
+            client_id     TEXT PRIMARY KEY,
+            ip            TEXT,
+            last_seen     TEXT,
+            last_activity TEXT
+        )
+    ''')
     conn.commit()
     conn.close()
-    print(f'✅ Database sẵn sàng: {DB_PATH}')
+    log.info('Database sẵn sàng: %s', DB_PATH)
+
+
+def touch_client(conn, client_id, activity):
+    if not client_id:
+        return
+    conn.execute('''
+        INSERT INTO clients (client_id, ip, last_seen, last_activity) VALUES (?, ?, ?, ?)
+        ON CONFLICT(client_id) DO UPDATE SET ip = excluded.ip, last_seen = excluded.last_seen,
+                                             last_activity = excluded.last_activity
+    ''', (client_id, request.remote_addr, now_iso(), activity))
 
 
 # ============ DỌN DẸP ẢNH CŨ ============
@@ -77,46 +190,40 @@ def cleanup_old_images():
     """Nếu số ảnh vượt max_images → xóa ảnh cũ nhất (file + DB record)."""
     conn = get_db()
     cur = conn.cursor()
-
-    cur.execute('SELECT max_images FROM config WHERE id = 1')
-    row = cur.fetchone()
-    if row is None:
-        conn.close()
-        return
-
-    max_images = row['max_images']
+    row = cur.execute('SELECT max_images FROM config WHERE id = 1').fetchone()
+    max_images = row['max_images'] if row else None
     if not max_images or max_images < 1:
         conn.close()
         return
 
-    cur.execute('SELECT COUNT(*) FROM images')
-    total = cur.fetchone()[0]
-
-    if total <= max_images:
-        conn.close()
-        return
-
-    excess = total - max_images
-    print(f'[CLEANUP] Co {total} anh > gioi han {max_images}. Xoa {excess} anh cu nhat.')
-
-    cur.execute('''
-        SELECT id, file_path FROM images
-        ORDER BY id ASC
-        LIMIT ?
-    ''', (excess,))
-    rows = cur.fetchall()
-
-    for r in rows:
-        abs_path = os.path.join(BASE_DIR, r['file_path'])
-        if os.path.exists(abs_path):
-            try:
-                os.remove(abs_path)
-            except Exception as e:
-                print(f'[CLEANUP] Loi xoa file {abs_path}: {e}')
-        cur.execute('DELETE FROM images WHERE id = ?', (r['id'],))
-
-    conn.commit()
+    total = cur.execute('SELECT COUNT(*) FROM images').fetchone()[0]
+    if total > max_images:
+        excess = total - max_images
+        rows = cur.execute('SELECT id, file_path FROM images ORDER BY id ASC LIMIT ?',
+                           (excess,)).fetchall()
+        for r in rows:
+            _remove_file(r['file_path'])
+            cur.execute('DELETE FROM images WHERE id = ?', (r['id'],))
+        conn.commit()
+        log.info('[CLEANUP] %d ảnh > giới hạn %d → đã xóa %d ảnh cũ nhất', total, max_images, excess)
     conn.close()
+
+
+def _remove_file(rel_path):
+    abs_path = os.path.join(BASE_DIR, rel_path)
+    if os.path.exists(abs_path):
+        try:
+            os.remove(abs_path)
+        except OSError as e:
+            log.warning('Lỗi xóa file %s: %s', abs_path, e)
+
+
+def _looks_like_image(head, ext):
+    if ext in ('.jpg', '.jpeg'):
+        return head[:3] == b'\xff\xd8\xff'
+    if ext == '.png':
+        return head[:8] == b'\x89PNG\r\n\x1a\n'
+    return False
 
 
 # ============ PHỤC VỤ FILE ẢNH ============
@@ -128,45 +235,59 @@ def uploaded_file(filename):
 # ============ API: ẢNH ============
 @app.route('/api/images', methods=['POST'])
 def upload_image():
-    # 1. Kiểm tra file
     if 'file' not in request.files:
         return jsonify({'error': 'Thiếu field "file" trong form-data'}), 400
-
     file = request.files['file']
     if file.filename == '':
         return jsonify({'error': 'Tên file rỗng'}), 400
 
-    # 2. Kiểm tra định dạng
     ext = os.path.splitext(file.filename)[1].lower() or '.jpg'
-    if ext not in ('.jpg', '.jpeg', '.png'):
+    if ext not in ALLOWED_EXT:
         return jsonify({'error': 'Chỉ nhận .jpg / .jpeg / .png'}), 400
+    if not _looks_like_image(file.stream.read(8), ext):
+        return jsonify({'error': 'Nội dung file không phải ảnh JPEG/PNG hợp lệ'}), 400
+    file.stream.seek(0)
 
-    # 3. Đọc metadata client gửi kèm
-    capture_time = request.form.get('capture_time', datetime.now().isoformat(timespec='seconds'))
-    width = request.form.get('width', type=int)
-    height = request.form.get('height', type=int)
+    received_time = now_iso()
+    form = request.form
+    capture_time = normalize_time(form.get('capture_time')) or received_time
+    client_id = form.get('client_id')
+    client_capture_id = form.get('client_capture_id', type=int)
 
-    # 4. Sinh tên file duy nhất
+    conn = get_db()
+    # Client gửi lại ảnh đã nhận (mất gói phản hồi) → trả lại id cũ, không lưu trùng
+    if client_id and client_capture_id is not None:
+        dup = conn.execute('''SELECT * FROM images WHERE client_id = ? AND client_capture_id = ?
+                              AND capture_time = ?''',
+                           (client_id, client_capture_id, capture_time)).fetchone()
+        if dup:
+            conn.close()
+            return jsonify({**dict(dup), 'duplicate': True}), 201
+
     unique_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}{ext}"
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
     file.save(file_path)
-
-    # 5. Ghi DB
     file_size_kb = round(os.path.getsize(file_path) / 1024, 2)
-    received_time = datetime.now().isoformat(timespec='seconds')
 
-    conn = get_db()
     cur = conn.cursor()
     cur.execute('''
-        INSERT INTO images (file_name, file_path, capture_time, received_time, file_size_kb, width, height)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (unique_name, f'uploads/{unique_name}', capture_time, received_time,
-          file_size_kb, width, height))
+        INSERT INTO images (file_name, file_path, capture_time, received_time, file_size_kb,
+                            width, height, sent_time, client_id, client_capture_id, client_ip,
+                            original_name, source, interval_used, quality_used)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (unique_name, f'uploads/{unique_name}', capture_time, received_time, file_size_kb,
+          form.get('width', type=int), form.get('height', type=int),
+          normalize_time(form.get('sent_time')), client_id, client_capture_id,
+          request.remote_addr, file.filename, form.get('source'),
+          form.get('interval_used', type=int), form.get('quality_used', type=int)))
     image_id = cur.lastrowid
+    touch_client(conn, client_id, 'upload')
     conn.commit()
     conn.close()
 
-    # 6. Dọn ảnh cũ nếu vượt giới hạn
+    log.info('[RECV] #%d từ %s (%s) | %.2f KB | trễ chụp→nhận %ss', image_id,
+             client_id or '?', request.remote_addr, file_size_kb,
+             seconds_between(capture_time, received_time))
     cleanup_old_images()
 
     return jsonify({
@@ -174,7 +295,7 @@ def upload_image():
         'file_name': unique_name,
         'file_path': f'uploads/{unique_name}',
         'file_size_kb': file_size_kb,
-        'received_time': received_time
+        'received_time': received_time,
     }), 201
 
 
@@ -182,8 +303,9 @@ def upload_image():
 def list_images():
     page = max(1, request.args.get('page', 1, type=int))
     per_page = min(max(1, request.args.get('per_page', 20, type=int)), 100)
-    start = request.args.get('start')
-    end = request.args.get('end')
+    start = normalize_time(request.args.get('start'))
+    end = normalize_time(request.args.get('end'))
+    q = (request.args.get('q') or '').strip()
 
     where, params = [], []
     if start:
@@ -192,21 +314,16 @@ def list_images():
     if end:
         where.append('capture_time <= ?')
         params.append(end)
+    if q:
+        where.append('(file_name LIKE ? OR original_name LIKE ? OR client_id LIKE ?)')
+        params += [f'%{q}%'] * 3
     where_sql = ('WHERE ' + ' AND '.join(where)) if where else ''
 
     conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute(f'SELECT COUNT(*) FROM images {where_sql}', params)
-    total = cur.fetchone()[0]
-
-    offset = (page - 1) * per_page
-    cur.execute(f'''
-        SELECT * FROM images {where_sql}
-        ORDER BY id DESC
-        LIMIT ? OFFSET ?
-    ''', params + [per_page, offset])
-    items = [dict(r) for r in cur.fetchall()]
+    total = conn.execute(f'SELECT COUNT(*) FROM images {where_sql}', params).fetchone()[0]
+    rows = conn.execute(f'''
+        SELECT * FROM images {where_sql} ORDER BY id DESC LIMIT ? OFFSET ?
+    ''', params + [per_page, (page - 1) * per_page]).fetchall()
     conn.close()
 
     return jsonify({
@@ -214,16 +331,14 @@ def list_images():
         'per_page': per_page,
         'total': total,
         'total_pages': (total + per_page - 1) // per_page,
-        'items': items
+        'items': [dict(r) for r in rows],
     })
 
 
 @app.route('/api/images/<int:image_id>', methods=['GET'])
 def get_image(image_id):
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM images WHERE id = ?', (image_id,))
-    row = cur.fetchone()
+    row = conn.execute('SELECT * FROM images WHERE id = ?', (image_id,)).fetchone()
     conn.close()
     if row is None:
         return jsonify({'error': 'Không tìm thấy ảnh'}), 404
@@ -233,30 +348,36 @@ def get_image(image_id):
 @app.route('/api/images/<int:image_id>', methods=['DELETE'])
 def delete_image(image_id):
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute('SELECT file_path FROM images WHERE id = ?', (image_id,))
-    row = cur.fetchone()
+    row = conn.execute('SELECT file_path FROM images WHERE id = ?', (image_id,)).fetchone()
     if row is None:
         conn.close()
         return jsonify({'error': 'Không tìm thấy ảnh'}), 404
-
-    abs_path = os.path.join(BASE_DIR, row['file_path'])
-    if os.path.exists(abs_path):
-        os.remove(abs_path)
-
-    cur.execute('DELETE FROM images WHERE id = ?', (image_id,))
+    _remove_file(row['file_path'])
+    conn.execute('DELETE FROM images WHERE id = ?', (image_id,))
     conn.commit()
     conn.close()
+    log.info('[DELETE] #%d bởi %s', image_id, request.remote_addr)
     return jsonify({'message': 'Đã xóa', 'id': image_id})
+
+
+@app.route('/api/images/<int:image_id>/displayed', methods=['POST'])
+def mark_displayed(image_id):
+    """Gallery gọi khi ảnh lần đầu hiện lên màn hình → đo độ trễ chụp → hiển thị."""
+    conn = get_db()
+    conn.execute('UPDATE images SET displayed_time = ? WHERE id = ? AND displayed_time IS NULL',
+                 (now_iso(), image_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'id': image_id})
 
 
 # ============ API: CONFIG ============
 @app.route('/api/config', methods=['GET'])
 def get_config():
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM config WHERE id = 1')
-    row = dict(cur.fetchone())
+    row = dict(conn.execute('SELECT * FROM config WHERE id = 1').fetchone())
+    touch_client(conn, request.args.get('client_id'), 'config_poll')
+    conn.commit()
     conn.close()
     return jsonify(row)
 
@@ -264,43 +385,119 @@ def get_config():
 @app.route('/api/config', methods=['POST'])
 def update_config():
     data = request.get_json(silent=True) or {}
-
     fields = {}
-    for key, caster, lo, hi in [
-        ('capture_interval', int, 1,    3600),
-        ('jpeg_quality',     int, 10,   100),
-        ('resize_width',     int, 160,  3840),
-        ('max_images',       int, 1,    10000),
-    ]:
+    for key, lo, hi in CONFIG_LIMITS:
         if key in data:
             try:
-                v = caster(data[key])
+                v = int(data[key])
             except (ValueError, TypeError):
                 return jsonify({'error': f'{key} không phải số'}), 400
             if not (lo <= v <= hi):
                 return jsonify({'error': f'{key} phải trong [{lo}, {hi}]'}), 400
             fields[key] = v
-
     if not fields:
         return jsonify({'error': 'Không có field hợp lệ nào'}), 400
 
-    fields['updated_at'] = datetime.now().isoformat(timespec='seconds')
-    set_clause = ', '.join(f'{k} = ?' for k in fields)
-    params = list(fields.values()) + [1]
-
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute(f'UPDATE config SET {set_clause} WHERE id = ?', params)
+    old = dict(conn.execute('SELECT * FROM config WHERE id = 1').fetchone())
+    changed_at = now_iso()
+    for k, v in fields.items():
+        if old.get(k) != v:
+            conn.execute('''INSERT INTO config_history (changed_at, field, old_value, new_value, changed_by)
+                            VALUES (?, ?, ?, ?, ?)''', (changed_at, k, old.get(k), v, request.remote_addr))
+            log.info('[CONFIG] %s: %s → %s (bởi %s)', k, old.get(k), v, request.remote_addr)
+
+    fields['updated_at'] = changed_at
+    set_clause = ', '.join(f'{k} = ?' for k in fields)
+    conn.execute(f'UPDATE config SET {set_clause} WHERE id = 1', list(fields.values()))
     conn.commit()
-    cur.execute('SELECT * FROM config WHERE id = 1')
-    row = dict(cur.fetchone())
+    row = dict(conn.execute('SELECT * FROM config WHERE id = 1').fetchone())
     conn.close()
 
-    # Nếu vừa giảm max_images → dọn ngay
     if 'max_images' in fields:
         cleanup_old_images()
-
     return jsonify(row)
+
+
+@app.route('/api/config/history', methods=['GET'])
+def config_history():
+    limit = min(max(1, request.args.get('limit', 50, type=int)), 500)
+    conn = get_db()
+    rows = conn.execute('SELECT * FROM config_history ORDER BY id DESC LIMIT ?', (limit,)).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
+# ============ API: GIÁM SÁT ============
+@app.route('/api/clients', methods=['GET'])
+def list_clients():
+    conn = get_db()
+    rows = [dict(r) for r in conn.execute('SELECT * FROM clients ORDER BY last_seen DESC')]
+    conn.close()
+    now = datetime.now()
+    for r in rows:
+        seen = parse_time(r['last_seen'])
+        r['seconds_ago'] = round((now - seen).total_seconds(), 1) if seen else None
+        r['online'] = r['seconds_ago'] is not None and r['seconds_ago'] < 30
+    return jsonify(rows)
+
+
+def _summary(values):
+    vals = [v for v in values if v is not None]
+    if not vals:
+        return None
+    vals_sorted = sorted(vals)
+    p95 = vals_sorted[min(len(vals_sorted) - 1, int(round(0.95 * (len(vals_sorted) - 1))))]
+    return {'count': len(vals), 'avg': round(statistics.mean(vals), 3),
+            'min': round(vals_sorted[0], 3), 'max': round(vals_sorted[-1], 3), 'p95': round(p95, 3)}
+
+
+@app.route('/api/stats', methods=['GET'])
+def stats():
+    """
+    Độ trễ (giây) cho N ảnh gần nhất:
+      capture_to_received : chụp ở Client → Server nhận xong
+      sent_to_received    : Client bắt đầu gửi → Server nhận xong (thời gian truyền qua mạng)
+      capture_to_display  : chụp → ảnh hiện trên Website
+      actual_gap          : khoảng cách thực tế giữa 2 lần chụp (so với interval_used)
+    Lưu ý: Client và Server ở 2 máy khác nhau phải đồng bộ đồng hồ (NTP) thì số liệu mới đúng.
+    """
+    limit = min(max(2, request.args.get('limit', 100, type=int)), 1000)
+    conn = get_db()
+    rows = [dict(r) for r in conn.execute(
+        'SELECT * FROM images ORDER BY capture_time DESC, id DESC LIMIT ?', (limit,))]
+    total = conn.execute('SELECT COUNT(*) FROM images').fetchone()[0]
+    conn.close()
+
+    rows.reverse()  # cũ → mới để tính khoảng cách giữa các lần chụp
+    items = []
+    prev_capture = None
+    prev_client = None
+    for r in rows:
+        gap = None
+        if prev_capture and r.get('client_id') and r.get('client_id') == prev_client:
+            gap = seconds_between(prev_capture, r['capture_time'])
+        items.append({
+            'id': r['id'],
+            'client_id': r.get('client_id'),
+            'capture_time': r['capture_time'],
+            'interval_used': r.get('interval_used'),
+            'actual_gap': gap,
+            'capture_to_received': seconds_between(r['capture_time'], r['received_time']),
+            'sent_to_received': seconds_between(r.get('sent_time'), r['received_time']),
+            'capture_to_display': seconds_between(r['capture_time'], r.get('displayed_time')),
+            'file_size_kb': r['file_size_kb'],
+        })
+        prev_capture, prev_client = r['capture_time'], r.get('client_id')
+    items.reverse()
+
+    return jsonify({
+        'total_images': total,
+        'sample_size': len(items),
+        'summary': {k: _summary([i[k] for i in items])
+                    for k in ('capture_to_received', 'sent_to_received', 'capture_to_display', 'actual_gap')},
+        'items': items,
+    })
 
 
 # ============ WEB UI ============
@@ -309,24 +506,40 @@ def page_index():
     return render_template('index.html')
 
 
+@app.route('/manage')
+def page_manage():
+    return render_template('manage.html')
+
+
 @app.route('/config')
 def page_config():
     return render_template('config.html')
 
 
+@app.route('/stats')
+def page_stats():
+    return render_template('stats.html')
+
+
 @app.route('/image/<int:image_id>')
 def page_detail(image_id):
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM images WHERE id = ?', (image_id,))
-    row = cur.fetchone()
+    row = conn.execute('SELECT * FROM images WHERE id = ?', (image_id,)).fetchone()
     conn.close()
     if row is None:
         abort(404)
-    return render_template('detail.html', image=dict(row))
+    img = dict(row)
+    img['capture_to_received'] = seconds_between(img['capture_time'], img['received_time'])
+    img['capture_to_display'] = seconds_between(img['capture_time'], img.get('displayed_time'))
+    return render_template('detail.html', image=img)
 
 
-# ============ MAIN ============
+# Khởi tạo DB ngay khi import (chạy được cả bằng `python Server.py` lẫn `flask run`)
+init_db()
+
 if __name__ == '__main__':
-    init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    host = os.environ.get('PBL4_HOST', '0.0.0.0')   # 0.0.0.0 để máy khác trong LAN truy cập được
+    port = int(os.environ.get('PBL4_PORT', 5000))
+    debug = os.environ.get('PBL4_DEBUG') == '1'     # KHÔNG bật debug khi mở ra LAN (lỗ hổng chạy code từ xa)
+    log.info('Server lắng nghe %s:%d (debug=%s)', host, port, debug)
+    app.run(host=host, port=port, debug=debug, threaded=True)
