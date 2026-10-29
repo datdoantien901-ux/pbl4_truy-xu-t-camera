@@ -163,7 +163,8 @@ class CaptureThread(threading.Thread):
                 self.source.open()
                 backoff = 2
             except Exception as e:
-                log.warning('%s. Thử lại sau %ds', e, backoff)
+                log.warning('Không mở được nguồn video (%s) → thử lại sau %ds',
+                            str(e).replace('ERROR: ', '').rstrip('.'), backoff)
                 self.stop_event.wait(backoff)
                 backoff = min(backoff * 2, 30)
                 continue

@@ -22,6 +22,13 @@ log = logging.getLogger('source')
 SUPPORTED_TYPES = ('rtsp', 'http', 'webcam', 'file', 'youtube')
 
 
+class _SilentYtdlpLogger:
+    def debug(self, msg): pass
+    def info(self, msg): pass
+    def warning(self, msg): pass
+    def error(self, msg): pass
+
+
 def mask_url(url):
     """Ẩn mật khẩu trong URL trước khi ghi log: rtsp://admin:***@ip/..."""
     s = str(url)
@@ -59,6 +66,8 @@ class VideoSource:
                 'format': 'best[height<=480]/best',
                 'noplaylist': True,
                 'quiet': True,
+                'no_warnings': True,
+                'logger': _SilentYtdlpLogger(),   # lỗi đã được Client ghi log, không in lặp lại
                 'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
             }
             with yt_dlp.YoutubeDL(opts) as ydl:

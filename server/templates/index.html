@@ -1,76 +1,105 @@
 {% extends '_layout.html' %}
-{% block title %}Camera Gallery{% endblock %}
-{% block heading %}📷 Camera Gallery{% endblock %}
+{% block title %}Ảnh trực tiếp{% endblock %}
 {% block content %}
-<div class="toolbar">
-  <span id="clients" class="muted">Đang kiểm tra Client…</span>
-  <label class="muted"><input type="checkbox" id="live" checked> Tự cập nhật (2 giây)</label>
+<div class="page-head">
+  <div>
+    <h1>Ảnh trực tiếp</h1>
+    <p>Ảnh mới từ Client hiện lên tự động. Bấm vào một ảnh để xem chi tiết.</p>
+  </div>
+  <label class="toggle"><input type="checkbox" id="live" checked> Tự cập nhật mỗi 2 giây</label>
 </div>
-<div id="gallery" class="gallery"></div>
-<div id="pager"></div>
+
+<section class="panel latest" id="latest" aria-live="polite">
+  <div class="latest-frame"><span class="live-tag" id="liveTag">Đang cập nhật</span></div>
+  <div class="latest-info"><div class="empty"><strong>Chưa có ảnh nào</strong>Chạy Client để bắt đầu gửi ảnh lên server.</div></div>
+</section>
+
+<h2 class="section-title" id="recentTitle">Ảnh gần đây</h2>
+<div class="gallery" id="gallery"></div>
+<div class="pager" id="pager"></div>
 {% endblock %}
 {% block scripts %}
 <script>
-const PER_PAGE = 20;
-const REFRESH_MS = 2000;   // chu kỳ làm mới gallery (ảnh hưởng trực tiếp tới độ trễ chụp → hiển thị)
+const PER_PAGE = 24;
+const REFRESH_MS = 2000;   // chu kỳ làm mới (ảnh hưởng trực tiếp tới độ trễ chụp → hiển thị)
 let page = 1;
 let lastSignature = null;
 
+function markDisplayed(img, it) {
+  // Ảnh hiện lên màn hình lần đầu → báo server để đo độ trễ chụp → hiển thị
+  if (it.displayed_time) return;
+  img.addEventListener('load', () => {
+    if (document.visibilityState === 'visible')
+      fetch(`/api/images/${it.id}/displayed`, {method: 'POST'});
+  }, {once: true});
+}
+
+function renderLatest(it) {
+  const box = document.getElementById('latest');
+  const frame = box.querySelector('.latest-frame');
+  const info = box.querySelector('.latest-info');
+  frame.querySelector('img')?.remove();
+  if (!it) {
+    info.replaceChildren(el('div', {class: 'empty'}, el('strong', {}, 'Chưa có ảnh nào'),
+      'Chạy Client để bắt đầu gửi ảnh lên server.'));
+    return;
+  }
+  const img = el('img', {src: '/' + it.file_path, alt: `Ảnh #${it.id} chụp lúc ${fmtTime(it.capture_time)}`});
+  markDisplayed(img, it);
+  frame.prepend(img);
+  info.replaceChildren(
+    el('div', {},
+      el('h2', {}, 'Khung hình mới nhất'),
+      el('div', {class: 'latest-time'}, clock(it.capture_time)),
+      el('div', {class: 'latest-date'}, day(it.capture_time))),
+    el('dl', {class: 'facts'},
+      el('dt', {}, 'Ảnh số'), el('dd', {}, '#' + it.id),
+      el('dt', {}, 'Client'), el('dd', {}, it.client_id || '—'),
+      el('dt', {}, 'Chụp → nhận'), el('dd', {}, fmtSec(latency(it.capture_time, it.received_time))),
+      el('dt', {}, 'Độ phân giải'), el('dd', {}, it.width && it.height ? `${it.width} × ${it.height}` : '—'),
+      el('dt', {}, 'Dung lượng'), el('dd', {}, it.file_size_kb + ' KB')),
+    el('a', {class: 'btn', href: `/image/${it.id}`}, 'Xem chi tiết'));
+}
+
 async function loadGallery(p) {
   page = p;
-  const res = await fetch(`/api/images?page=${p}&per_page=${PER_PAGE}`);
-  const data = await res.json();
-
-  // Không vẽ lại nếu không có ảnh mới (tránh nháy màn hình)
+  const data = await (await fetch(`/api/images?page=${p}&per_page=${PER_PAGE}`)).json();
   const signature = p + ':' + data.items.map(i => i.id).join(',');
-  if (signature === lastSignature) return;
+  if (signature === lastSignature) return;   // không có ảnh mới → không vẽ lại
   lastSignature = signature;
 
-  const g = document.getElementById('gallery');
-  g.replaceChildren();
-  if (data.items.length === 0) g.append(el('p', {}, 'Chưa có ảnh nào.'));
+  if (p === 1) renderLatest(data.items[0]);
+  const items = p === 1 ? data.items.slice(1) : data.items;
+  document.getElementById('recentTitle').textContent =
+    data.total ? `Ảnh gần đây (${data.total} ảnh trên server)` : 'Ảnh gần đây';
 
-  for (const it of data.items) {
-    const img = el('img', {src: '/' + it.file_path, alt: it.file_name, loading: 'lazy'});
-    // Ảnh hiện lên màn hình lần đầu → báo server để đo độ trễ chụp → hiển thị
-    if (!it.displayed_time) {
-      img.addEventListener('load', () => {
-        if (document.visibilityState === 'visible')
-          fetch(`/api/images/${it.id}/displayed`, {method: 'POST'});
-      }, {once: true});
-    }
-    g.append(el('a', {href: `/image/${it.id}`, class: 'card'},
-      img,
-      el('div', {class: 'meta'},
-        el('div', {}, `#${it.id} · ${it.file_size_kb} KB · ${it.client_id || ''}`),
-        el('div', {}, fmtTime(it.capture_time)))));
-  }
+  const g = document.getElementById('gallery');
+  g.replaceChildren(...items.map(it => {
+    const img = el('img', {src: '/' + it.file_path, alt: `Ảnh #${it.id}`, loading: 'lazy'});
+    markDisplayed(img, it);
+    return el('a', {href: `/image/${it.id}`, class: 'thumb-card'}, img,
+      el('div', {class: 'thumb-meta'},
+        el('span', {class: 'time'}, clock(it.capture_time)),
+        el('span', {class: 'id'}, `#${it.id}`)));
+  }));
 
   const pager = document.getElementById('pager');
   pager.replaceChildren();
   if (data.total_pages > 1) {
     pager.append(
-      el('button', {onclick: () => loadGallery(page - 1), ...(page <= 1 ? {disabled: ''} : {})}, '← Trước'),
-      el('span', {}, `  Trang ${page}/${data.total_pages} (${data.total} ảnh)  `),
-      el('button', {onclick: () => loadGallery(page + 1), ...(page >= data.total_pages ? {disabled: ''} : {})}, 'Sau →'));
+      el('button', {class: 'btn', onclick: () => loadGallery(page - 1), disabled: page <= 1}, 'Trang trước'),
+      el('span', {}, `Trang ${page} / ${data.total_pages}`),
+      el('button', {class: 'btn', onclick: () => loadGallery(page + 1), disabled: page >= data.total_pages}, 'Trang sau'));
   }
 }
 
-async function loadClients() {
-  const span = document.getElementById('clients');
-  try {
-    const list = await (await fetch('/api/clients')).json();
-    if (!list.length) { span.textContent = 'Chưa có Client nào kết nối.'; return; }
-    span.replaceChildren(...list.map(c => el('span', {class: 'badge ' + (c.online ? 'ok' : 'off')},
-      `${c.online ? '●' : '○'} ${c.client_id} (${c.ip}) — ${c.online ? 'online' : c.seconds_ago + 's trước'}`)));
-  } catch { span.textContent = 'Không lấy được trạng thái Client'; }
-}
-
+const live = document.getElementById('live');
+const tag = document.getElementById('liveTag');
+live.onchange = () => {
+  tag.textContent = live.checked ? 'Đang cập nhật' : 'Đã tạm dừng';
+  tag.classList.toggle('paused', !live.checked);
+};
 loadGallery(1);
-loadClients();
-setInterval(() => {
-  if (document.getElementById('live').checked && page === 1) loadGallery(1);
-}, REFRESH_MS);
-setInterval(loadClients, 5000);
+setInterval(() => { if (live.checked && page === 1) loadGallery(1); }, REFRESH_MS);
 </script>
 {% endblock %}

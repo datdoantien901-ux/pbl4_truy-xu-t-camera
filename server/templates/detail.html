@@ -1,32 +1,60 @@
 {% extends '_layout.html' %}
-{% block title %}Chi tiết ảnh #{{ image.id }}{% endblock %}
-{% block heading %}Chi tiết ảnh #{{ image.id }}{% endblock %}
+{% macro t(v) %}{{ (v or '—')|replace('T', ' ') }}{% endmacro %}
+{% macro hms(v) %}{{ v.split('T')[1] if v and 'T' in v else (v or '—') }}{% endmacro %}
+{% macro sec(v) %}{{ '%.3f s'|format(v) if v is not none else '—' }}{% endmacro %}
+{% block title %}Ảnh #{{ image.id }}{% endblock %}
 {% block content %}
-<img src="/{{ image.file_path }}" class="detail-img" alt="{{ image.file_name }}">
-<table>
-  <tr><td>Tên file (server)</td><td>{{ image.file_name }}</td></tr>
-  <tr><td>Tên file (client)</td><td>{{ image.original_name or '—' }}</td></tr>
-  <tr><td>Client</td><td>{{ image.client_id or '—' }} ({{ image.client_ip or '?' }})</td></tr>
-  <tr><td>Nguồn</td><td>{{ image.source or '—' }}</td></tr>
-  <tr><td>Chụp lúc</td><td>{{ (image.capture_time or '')|replace('T', ' ') }}</td></tr>
-  <tr><td>Client gửi lúc</td><td>{{ (image.sent_time or '—')|replace('T', ' ') }}</td></tr>
-  <tr><td>Server nhận lúc</td><td>{{ (image.received_time or '')|replace('T', ' ') }}</td></tr>
-  <tr><td>Hiển thị lần đầu</td><td>{{ (image.displayed_time or '—')|replace('T', ' ') }}</td></tr>
-  <tr><td>Trễ chụp → nhận</td><td>{{ '%.3f s'|format(image.capture_to_received) if image.capture_to_received is not none else '—' }}</td></tr>
-  <tr><td>Trễ chụp → hiển thị</td><td>{{ '%.3f s'|format(image.capture_to_display) if image.capture_to_display is not none else '—' }}</td></tr>
-  <tr><td>Kích thước</td><td>{{ image.file_size_kb }} KB</td></tr>
-  <tr><td>Độ phân giải</td><td>{{ image.width }}×{{ image.height }}</td></tr>
-  <tr><td>Cấu hình lúc chụp</td><td>interval={{ image.interval_used or '?' }}s, quality={{ image.quality_used or '?' }}</td></tr>
-</table>
-<p><button id="del">🗑️ Xóa ảnh này</button> <a href="/manage">← Về trang quản lý</a></p>
+<div class="page-head">
+  <div>
+    <h1>Ảnh #{{ image.id }}</h1>
+    <p>Chụp lúc {{ t(image.capture_time) }}{% if image.client_id %} bởi {{ image.client_id }}{% endif %}</p>
+  </div>
+  <a class="btn" href="/manage">Về trang quản lý</a>
+</div>
+
+<div class="detail">
+  <div class="detail-frame"><img src="/{{ image.file_path }}" alt="Ảnh #{{ image.id }}"></div>
+
+  <aside class="panel detail-info">
+    <h2>Thời gian{% if image.capture_time %} ngày {{ image.capture_time[8:10] }}/{{ image.capture_time[5:7] }}/{{ image.capture_time[:4] }}{% endif %}</h2>
+    <dl class="facts">
+      <dt>Chụp</dt><dd>{{ hms(image.capture_time) }}</dd>
+      <dt>Client gửi</dt><dd>{{ hms(image.sent_time) }}</dd>
+      <dt>Server nhận</dt><dd>{{ hms(image.received_time) }}</dd>
+      <dt>Hiển thị lần đầu</dt><dd>{{ hms(image.displayed_time) }}</dd>
+    </dl>
+
+    <h2>Độ trễ</h2>
+    <dl class="facts">
+      <dt>Chụp → nhận</dt><dd>{{ sec(image.capture_to_received) }}</dd>
+      <dt>Chụp → hiển thị</dt><dd>{{ sec(image.capture_to_display) }}</dd>
+    </dl>
+
+    <h2>Ảnh</h2>
+    <dl class="facts">
+      <dt>Độ phân giải</dt><dd>{{ image.width or '?' }} × {{ image.height or '?' }}</dd>
+      <dt>Dung lượng</dt><dd>{{ image.file_size_kb }} KB</dd>
+      <dt>Chất lượng JPEG</dt><dd>{{ image.quality_used or '—' }}</dd>
+      <dt>Tần suất lúc chụp</dt><dd>{{ (image.interval_used ~ ' giây') if image.interval_used else '—' }}</dd>
+      <dt>Nguồn</dt><dd>{{ image.source or '—' }}</dd>
+      <dt>Client</dt><dd>{{ image.client_id or '—' }}{% if image.client_ip %} ({{ image.client_ip }}){% endif %}</dd>
+      <dt>Tên file</dt><dd class="wrap">{{ image.file_name }}</dd>
+    </dl>
+
+    <div class="detail-actions">
+      <a class="btn" href="/{{ image.file_path }}" download>Tải ảnh</a>
+      <button class="btn btn-danger" id="del">Xóa ảnh</button>
+    </div>
+  </aside>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
 document.getElementById('del').onclick = async () => {
-  if (!confirm('Xóa ảnh này?')) return;
+  if (!confirm('Xóa ảnh #{{ image.id }}?')) return;
   const r = await fetch('/api/images/{{ image.id }}', {method: 'DELETE'});
   if (r.ok) location.href = '/manage';
-  else alert('Lỗi xóa ảnh');
+  else alert('Chưa xóa được ảnh (lỗi ' + r.status + ').');
 };
 </script>
 {% endblock %}

@@ -4,7 +4,7 @@ Hệ thống gồm 3 phần:
 
 - **Client** (`client/`): kết nối Camera (RTSP / HTTP / webcam / file / YouTube), chụp ảnh theo chu kỳ, lưu cục bộ (file + SQLite) và gửi lên Server.
 - **Backend API** (`server/Server.py`): RESTful API bằng Flask, nhận và quản lý ảnh, cấu hình Client từ xa.
-- **Website** (`server/templates/`): gallery thời gian thực, trang quản lý (tìm kiếm / xem / xóa), trang cấu hình, trang thống kê độ trễ.
+- **Website** (`server/templates/`): trang ảnh trực tiếp, trang quản lý (tìm kiếm / xem / xóa), trang cấu hình, trang thống kê độ trễ có biểu đồ. Màu sắc chỉnh trong `server/static/style.css` (các biến ở đầu file).
 
 ## Kiến trúc
 
@@ -112,7 +112,7 @@ Trong cửa sổ preview, nhấn `q` để thoát, hoặc nhấn Ctrl+C trong te
 | `http` | `http://192.168.1.15:8080/video` | Luồng MJPEG qua HTTP |
 | `webcam` | `0` | Webcam gắn vào máy |
 | `file` | `video_test.mp4` | Test khi không có camera (phát lặp lại) |
-| `youtube` | `https://www.youtube.com/watch?v=oC8ttZHG50I` | Camera công cộng 0511 |
+| `youtube` | `https://www.youtube.com/@0511.VietNam/live` | Camera công cộng 0511 (luồng đang phát của kênh). Nếu báo lỗi, vào tab *Trực tiếp* của kênh, mở một video đang LIVE và dán link `watch?v=...` |
 
 **Không commit mật khẩu camera lên git.** Đặt URL qua biến môi trường thay vì ghi vào file:
 
