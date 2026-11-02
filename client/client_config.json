@@ -1,0 +1,23 @@
+{
+  "client_id": "client-01",
+
+  "source": {
+    "type": "youtube",
+    "url": "https://www.youtube.com/watch?v=sJvEFrG0wq0",
+    "rtsp_transport": "tcp"
+  },
+
+  "server_url": "http://127.0.0.1:5000",
+
+  "capture": {
+    "capture_interval": 5,
+    "jpeg_quality": 80,
+    "resize_width": 854
+  },
+
+  "config_poll_interval": 10,
+  "upload_enabled": true,
+  "upload_queue_size": 50,
+  "show_preview": true,
+  "preview_fps": 5
+}

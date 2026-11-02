@@ -1,0 +1,109 @@
+{% extends '_layout.html' %}
+{% block title %}Quản lý ảnh{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Quản lý ảnh</h1>
+    <p>Tìm ảnh theo khoảng thời gian chụp, tên file hoặc tên Client, xem chi tiết và xóa ảnh không cần.</p>
+  </div>
+</div>
+
+<form id="filter" class="panel filter">
+  <label class="field"><span>Chụp từ</span><input type="datetime-local" name="start" step="1"></label>
+  <label class="field"><span>Đến</span><input type="datetime-local" name="end" step="1"></label>
+  <label class="field"><span>Tên file hoặc Client</span><input type="text" name="q" placeholder="Ví dụ: client-01"></label>
+  <button type="submit" class="btn btn-primary">Tìm ảnh</button>
+  <button type="button" class="btn" id="reset">Xóa bộ lọc</button>
+</form>
+
+<div class="bar">
+  <span id="summary" class="muted"></span>
+  <button class="btn btn-danger" id="delSelected" disabled>Xóa ảnh đã chọn</button>
+</div>
+
+<div class="panel table-wrap">
+  <table class="data">
+    <thead>
+      <tr><th><input type="checkbox" id="all" aria-label="Chọn tất cả"></th><th>Ảnh</th><th>Số</th><th>Chụp lúc</th>
+          <th>Client</th><th class="num">Dung lượng</th><th class="num">Độ phân giải</th><th></th></tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<div class="pager" id="pager"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const PER_PAGE = 25;
+let page = 1;
+const form = document.getElementById('filter');
+
+function query() {
+  const fd = new FormData(form);
+  const p = new URLSearchParams({page, per_page: PER_PAGE});
+  for (const k of ['start', 'end', 'q']) if (fd.get(k)) p.set(k, fd.get(k));
+  return p;
+}
+
+async function load(p = 1) {
+  page = p;
+  const data = await (await fetch('/api/images?' + query())).json();
+  document.getElementById('summary').textContent = `Tìm thấy ${data.total} ảnh`;
+  const tbody = document.getElementById('rows');
+  tbody.replaceChildren();
+  if (!data.items.length)
+    tbody.append(el('tr', {}, el('td', {colspan: 8},
+      el('div', {class: 'empty'}, el('strong', {}, 'Không có ảnh phù hợp'), 'Thử nới rộng khoảng thời gian hoặc xóa bộ lọc.'))));
+
+  for (const it of data.items) {
+    tbody.append(el('tr', {},
+      el('td', {}, el('input', {type: 'checkbox', class: 'pick', value: it.id, onchange: updateBtn,
+                                'aria-label': `Chọn ảnh #${it.id}`})),
+      el('td', {}, el('a', {href: `/image/${it.id}`},
+        el('img', {src: '/' + it.file_path, class: 'mini', alt: `Ảnh #${it.id}`, loading: 'lazy'}))),
+      el('td', {}, '#' + it.id),
+      el('td', {}, fmtTime(it.capture_time)),
+      el('td', {}, it.client_id || '—'),
+      el('td', {class: 'num'}, it.file_size_kb + ' KB'),
+      el('td', {class: 'num'}, it.width && it.height ? `${it.width} × ${it.height}` : '—'),
+      el('td', {}, el('div', {class: 'row-actions'},
+        el('a', {class: 'btn', href: `/image/${it.id}`}, 'Xem'),
+        el('button', {class: 'btn btn-danger', onclick: () => del([it.id])}, 'Xóa')))));
+  }
+  document.getElementById('all').checked = false;
+  updateBtn();
+
+  const pager = document.getElementById('pager');
+  pager.replaceChildren();
+  if (data.total_pages > 1) {
+    pager.append(
+      el('button', {class: 'btn', onclick: () => load(page - 1), disabled: page <= 1}, 'Trang trước'),
+      el('span', {}, `Trang ${page} / ${data.total_pages}`),
+      el('button', {class: 'btn', onclick: () => load(page + 1), disabled: page >= data.total_pages}, 'Trang sau'));
+  }
+}
+
+function picked() { return [...document.querySelectorAll('.pick:checked')].map(c => +c.value); }
+function updateBtn() {
+  const n = picked().length;
+  const b = document.getElementById('delSelected');
+  b.disabled = n === 0;
+  b.textContent = n ? `Xóa ${n} ảnh đã chọn` : 'Xóa ảnh đã chọn';
+}
+
+async function del(ids) {
+  if (!confirm(ids.length === 1 ? `Xóa ảnh #${ids[0]}?` : `Xóa ${ids.length} ảnh đã chọn?`)) return;
+  await Promise.all(ids.map(id => fetch(`/api/images/${id}`, {method: 'DELETE'})));
+  load(page);
+}
+
+form.addEventListener('submit', (e) => { e.preventDefault(); load(1); });
+document.getElementById('reset').onclick = () => { form.reset(); load(1); };
+document.getElementById('all').onchange = (e) => {
+  document.querySelectorAll('.pick').forEach(c => c.checked = e.target.checked);
+  updateBtn();
+};
+document.getElementById('delSelected').onclick = () => del(picked());
+load(1);
+</script>
+{% endblock %}
