@@ -1,67 +1,115 @@
-<!doctype html>
-<html lang="vi">
-<head>
-<meta charset="utf-8">
-<title>Cấu hình Client</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-<header>
-  <h1>⚙️ Cấu hình thu nhận</h1>
-  <nav><a href="/">Gallery</a><a href="/config">Cấu hình</a></nav>
-</header>
-<main>
-  <form id="f">
-    <label>Tần suất chụp (giây):
-      <input type="number" name="capture_interval" min="1" max="3600">
-    </label>
-    <label>Chất lượng JPEG (10–100):
-      <input type="number" name="jpeg_quality" min="10" max="100">
-    </label>
-    <label>Chiều rộng resize (px):
-      <input type="number" name="resize_width" min="160" max="3840">
-    </label>
-    <label>Số ảnh lưu tối đa:
-      <input type="number" name="max_images" min="1" max="10000">
-      <small style="color:#666">(ảnh cũ nhất sẽ bị xóa khi vượt)</small>
-    </label>
-    <button type="submit">💾 Lưu cấu hình</button>
+{% extends '_layout.html' %}
+{% block title %}Cấu hình thu nhận{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Cấu hình thu nhận</h1>
+    <p>Thay đổi ở đây được gửi xuống Client. Client kiểm tra cấu hình mới khoảng 10 giây một lần và áp dụng ngay, không cần khởi động lại.</p>
+  </div>
+</div>
+
+<div class="config-grid">
+  <form id="f" class="panel config-form">
+    <div class="setting">
+      <div><label for="capture_interval">Tần suất chụp</label>
+        <p>Client chụp một ảnh sau mỗi khoảng thời gian này.</p></div>
+      <div class="with-unit"><input type="number" id="capture_interval" name="capture_interval" min="1" max="3600" required><span class="unit">giây</span></div>
+    </div>
+    <div class="setting">
+      <div><label for="jpeg_quality">Chất lượng ảnh JPEG</label>
+        <p>Cao hơn thì ảnh nét hơn nhưng file lớn hơn, gửi lâu hơn.</p></div>
+      <div class="range-row">
+        <input type="range" id="jpeg_quality" name="jpeg_quality" min="10" max="100" step="5" required>
+        <output id="qualityOut" for="jpeg_quality"></output>
+      </div>
+    </div>
+    <div class="setting">
+      <div><label for="resize_width">Chiều rộng ảnh</label>
+        <p>Ảnh được thu nhỏ về chiều rộng này trước khi gửi, giữ nguyên tỉ lệ.</p></div>
+      <div class="with-unit"><input type="number" id="resize_width" name="resize_width" min="160" max="3840" step="2" required><span class="unit">px</span></div>
+    </div>
+    <div class="setting">
+      <div><label for="max_images">Số ảnh lưu tối đa trên server</label>
+        <p>Khi vượt quá, server tự xóa ảnh cũ nhất.</p></div>
+      <div class="with-unit"><input type="number" id="max_images" name="max_images" min="1" max="10000" required><span class="unit">ảnh</span></div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Lưu cấu hình</button>
+      <span class="muted" id="updated"></span>
+    </div>
+    <div class="toast" id="msg" role="status"></div>
   </form>
-  <p id="msg"></p>
-</main>
+
+  <aside class="panel side-note">
+    <h2>Kiểm thử điều khiển từ xa</h2>
+    <ol>
+      <li>Đổi tần suất chụp, ví dụ từ 5 xuống 2 giây, rồi bấm Lưu.</li>
+      <li>Trong log của Client, tìm dòng <code>[CONFIG] Áp dụng cấu hình mới</code>.</li>
+      <li>Mở trang Thống kê độ trễ, xem cột Interval thực tế chuyển về khoảng 2 giây.</li>
+    </ol>
+  </aside>
+</div>
+
+<h2 class="section-title">Lịch sử thay đổi</h2>
+<div class="panel table-wrap">
+  <table class="data">
+    <thead><tr><th>Thời điểm</th><th>Tham số</th><th class="num">Giá trị cũ</th><th class="num">Giá trị mới</th><th>Thay đổi từ máy</th></tr></thead>
+    <tbody id="history"></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
 <script>
+const FIELDS = ['capture_interval', 'jpeg_quality', 'resize_width', 'max_images'];
+const NAMES = {capture_interval: 'Tần suất chụp (giây)', jpeg_quality: 'Chất lượng JPEG',
+               resize_width: 'Chiều rộng ảnh (px)', max_images: 'Số ảnh tối đa'};
+const f = document.getElementById('f');
+const msg = document.getElementById('msg');
+const q = document.getElementById('jpeg_quality');
+const qOut = document.getElementById('qualityOut');
+q.addEventListener('input', () => qOut.textContent = q.value);
+
+function showUpdated(c) { document.getElementById('updated').textContent = 'Cập nhật lần cuối ' + fmtTime(c.updated_at); }
+
 async function load() {
-  const r = await fetch('/api/config');
-  const c = await r.json();
-  const f = document.getElementById('f');
-  f.capture_interval.value = c.capture_interval;
-  f.jpeg_quality.value     = c.jpeg_quality;
-  f.resize_width.value     = c.resize_width;
-  f.max_images.value       = c.max_images;
-  document.getElementById('msg').textContent = 'Cập nhật lần cuối: ' + c.updated_at;
+  const c = await (await fetch('/api/config')).json();
+  for (const k of FIELDS) f[k].value = c[k];
+  qOut.textContent = q.value;
+  showUpdated(c);
+  loadHistory();
 }
 
-document.getElementById('f').addEventListener('submit', async (e) => {
+async function loadHistory() {
+  const rows = await (await fetch('/api/config/history?limit=30')).json();
+  const tb = document.getElementById('history');
+  tb.replaceChildren();
+  if (!rows.length)
+    tb.append(el('tr', {}, el('td', {colspan: 5}, el('div', {class: 'empty'}, 'Chưa có thay đổi nào. Lưu cấu hình để bắt đầu ghi lịch sử.'))));
+  for (const r of rows)
+    tb.append(el('tr', {}, el('td', {}, fmtTime(r.changed_at)), el('td', {}, NAMES[r.field] || r.field),
+                 el('td', {class: 'num'}, r.old_value), el('td', {class: 'num'}, r.new_value),
+                 el('td', {}, r.changed_by || '—')));
+}
+
+f.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const fd = new FormData(e.target);
-  const body = {
-    capture_interval: parseInt(fd.get('capture_interval')),
-    jpeg_quality:     parseInt(fd.get('jpeg_quality')),
-    resize_width:     parseInt(fd.get('resize_width')),
-    max_images:       parseInt(fd.get('max_images')),
-  };
+  const body = {};
+  for (const k of FIELDS) body[k] = parseInt(f[k].value);
   const r = await fetch('/api/config', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(body)
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
   });
   const j = await r.json();
-  document.getElementById('msg').textContent =
-    r.ok ? '✅ Đã lưu. Client sẽ áp dụng trong vòng polling tiếp theo.' : '❌ ' + (j.error || r.status);
+  if (r.ok) {
+    msg.className = 'toast ok';
+    msg.textContent = 'Đã lưu cấu hình. Client sẽ áp dụng trong khoảng 10 giây.';
+    showUpdated(j);
+  } else {
+    msg.className = 'toast err';
+    msg.textContent = 'Chưa lưu được: ' + (j.error || ('lỗi ' + r.status));
+  }
+  loadHistory();
 });
 
 load();
 </script>
-</body>
-</html>
-
+{% endblock %}

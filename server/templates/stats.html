@@ -1,0 +1,144 @@
+{% extends '_layout.html' %}
+{% block title %}Thống kê độ trễ{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Thống kê độ trễ</h1>
+    <p>Số liệu kiểm thử hiệu năng: thời gian truyền qua mạng, độ trễ từ lúc chụp tới lúc hiển thị và chu kỳ chụp thực tế.</p>
+  </div>
+  <div class="bar" style="margin:0">
+    <label class="field"><span>Số ảnh gần nhất</span>
+      <select id="limit"><option>20</option><option selected>50</option><option>100</option><option>500</option></select></label>
+    <button class="btn" id="csv">Tải file CSV</button>
+  </div>
+</div>
+
+<div class="notice">Khi Client và Server chạy trên hai máy khác nhau, cần <b>đồng bộ đồng hồ hai máy (NTP)</b>,
+  nếu không độ trễ sẽ bị lệch đúng bằng độ lệch đồng hồ. Độ trễ chụp → hiển thị chỉ được ghi khi trang Ảnh trực tiếp đang mở.</div>
+
+<section class="panel metrics" id="metrics"></section>
+
+<section class="panel chart">
+  <div class="chart-head">
+    <h2>Độ trễ theo từng ảnh</h2>
+    <div class="legend">
+      <span><i style="background:var(--sign)"></i>Chụp → server nhận</span>
+      <span><i style="background:var(--signal)"></i>Chụp → hiển thị</span>
+    </div>
+  </div>
+  <svg id="chart" viewBox="0 0 800 220" role="img" aria-label="Biểu đồ độ trễ"></svg>
+</section>
+
+<h2 class="section-title">Chi tiết từng ảnh</h2>
+<div class="panel table-wrap">
+  <table class="data">
+    <thead><tr><th>Ảnh</th><th>Client</th><th>Chụp lúc</th><th class="num">Tần suất cấu hình</th><th class="num">Tần suất thực tế</th>
+               <th class="num">Truyền mạng</th><th class="num">Chụp → nhận</th><th class="num">Chụp → hiển thị</th><th class="num">KB</th></tr></thead>
+    <tbody id="items"></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const METRICS = [
+  ['sent_to_received',    'Truyền qua mạng', 'Client gửi → server nhận'],
+  ['capture_to_received', 'Chụp → server nhận', 'gồm xử lý ảnh và chờ gửi'],
+  ['capture_to_display',  'Chụp → hiển thị', 'thời gian người xem thấy ảnh'],
+  ['actual_gap',          'Tần suất thực tế', 'khoảng cách giữa 2 lần chụp'],
+];
+let last = null;
+const SVGNS = 'http://www.w3.org/2000/svg';
+function svg(tag, attrs) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+}
+
+function renderMetrics(summary) {
+  document.getElementById('metrics').replaceChildren(...METRICS.map(([k, name, hint]) => {
+    const s = summary[k];
+    return el('div', {class: 'metric'},
+      el('div', {class: 'metric-name'}, name),
+      el('div', {class: 'metric-value'}, s ? s.avg.toFixed(3) : '—', s ? el('small', {}, 's') : null),
+      el('div', {class: 'metric-range'}, s ? `nhỏ nhất ${s.min}s, lớn nhất ${s.max}s, P95 ${s.p95}s` : hint));
+  }));
+}
+
+function renderChart(items) {
+  const box = document.getElementById('chart');
+  box.replaceChildren();
+  const pts = items.slice().reverse();   // cũ → mới, từ trái sang phải
+  const W = Math.max(320, Math.round(box.getBoundingClientRect().width)) || 800;
+  const H = 220, P = {l: 44, r: 8, t: 10, b: 12};
+  box.setAttribute('viewBox', `0 0 ${W} ${H}`);   // vẽ đúng kích thước thật → chữ không bị méo
+  const vals = pts.flatMap(p => [p.capture_to_received, p.capture_to_display]).filter(v => v !== null);
+  if (pts.length < 2 || !vals.length) {
+    const t = svg('text', {x: W / 2, y: H / 2, 'text-anchor': 'middle', fill: 'var(--ink-soft)', 'font-size': 14});
+    t.textContent = 'Chưa đủ dữ liệu để vẽ biểu đồ';
+    box.append(t);
+    return;
+  }
+  const max = Math.max(...vals) * 1.1 || 1;
+  const x = i => P.l + i * (W - P.l - P.r) / (pts.length - 1);
+  const y = v => H - P.b - v / max * (H - P.t - P.b);
+
+  for (let g = 0; g <= 4; g++) {             // lưới ngang + nhãn trục y
+    const v = max * g / 4, yy = y(v);
+    box.append(svg('line', {x1: P.l, x2: W - P.r, y1: yy, y2: yy, stroke: 'var(--line)', 'stroke-width': 1}));
+    const t = svg('text', {x: P.l - 6, y: yy + 4, 'text-anchor': 'end', fill: 'var(--ink-soft)', 'font-size': 11});
+    t.textContent = v.toFixed(v < 1 ? 2 : 1) + 's';
+    box.append(t);
+  }
+  for (const [key, color] of [['capture_to_received', 'var(--sign)'], ['capture_to_display', 'var(--signal)']]) {
+    let d = '', pen = false;
+    pts.forEach((p, i) => {
+      if (p[key] === null) { pen = false; return; }
+      d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p[key]).toFixed(1) + ' ';
+      pen = true;
+    });
+    if (d) box.append(svg('path', {d, fill: 'none', stroke: color, 'stroke-width': 2,
+                                    'vector-effect': 'non-scaling-stroke', 'stroke-linejoin': 'round'}));
+  }
+}
+
+function renderTable(items) {
+  const tb = document.getElementById('items');
+  tb.replaceChildren();
+  if (!items.length)
+    tb.append(el('tr', {}, el('td', {colspan: 9}, el('div', {class: 'empty'}, 'Chưa có ảnh nào. Chạy Client để có số liệu.'))));
+  for (const it of items) {
+    const off = it.actual_gap !== null && it.interval_used && Math.abs(it.actual_gap - it.interval_used) > 1;
+    tb.append(el('tr', {},
+      el('td', {}, el('a', {href: `/image/${it.id}`}, '#' + it.id)),
+      el('td', {}, it.client_id || '—'),
+      el('td', {}, fmtTime(it.capture_time)),
+      el('td', {class: 'num'}, it.interval_used ? it.interval_used + ' s' : '—'),
+      el('td', {class: 'num' + (off ? ' warn' : ''), title: off ? 'Lệch hơn 1 giây so với cấu hình' : null}, fmtSec(it.actual_gap)),
+      el('td', {class: 'num'}, fmtSec(it.sent_to_received)),
+      el('td', {class: 'num'}, fmtSec(it.capture_to_received)),
+      el('td', {class: 'num'}, fmtSec(it.capture_to_display)),
+      el('td', {class: 'num'}, it.file_size_kb)));
+  }
+}
+
+async function load() {
+  const limit = document.getElementById('limit').value;
+  last = await (await fetch('/api/stats?limit=' + limit)).json();
+  renderMetrics(last.summary);
+  renderChart(last.items);
+  renderTable(last.items);
+}
+
+document.getElementById('csv').onclick = () => {
+  if (!last) return;
+  const cols = ['id', 'client_id', 'capture_time', 'interval_used', 'actual_gap',
+                'sent_to_received', 'capture_to_received', 'capture_to_display', 'file_size_kb'];
+  const lines = [cols.join(',')].concat(last.items.map(i => cols.map(c => i[c] ?? '').join(',')));
+  el('a', {href: URL.createObjectURL(new Blob([lines.join('\n')], {type: 'text/csv'})),
+           download: 'do_tre_camera.csv'}).click();
+};
+document.getElementById('limit').onchange = load;
+load();
+setInterval(load, 5000);
+</script>
+{% endblock %}
