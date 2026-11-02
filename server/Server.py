@@ -24,214 +24,22 @@ Chạy:  python Server.py               (mặc định lắng nghe 0.0.0.0:5000,
 """
 import os
 import statistics
-import uuid
 from datetime import datetime
 
-from flask import Flask, abort, jsonify, render_template, request, send_from_directory
+from flask import Flask, abort, jsonify, render_template, request
 from flask_cors import CORS
 
 from db import get_db, init_db, to_json, touch_client
-from settings import ALLOWED_EXT, BASE_DIR, CONFIG_LIMITS, MAX_CONTENT_LENGTH, UPLOAD_FOLDER, log
-from timeutil import iso, normalize_time, now_dt, seconds_between
+from routes.images import images_bp
+from settings import CONFIG_LIMITS, MAX_CONTENT_LENGTH, UPLOAD_FOLDER, log
+from storage import cleanup_old_images
+from timeutil import iso, now_dt, seconds_between
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 CORS(app)
-
-
-# ============ DỌN DẸP ẢNH CŨ ============
-def cleanup_old_images():
-    """Nếu số ảnh vượt max_images → xóa ảnh cũ nhất (file + DB record)."""
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute('SELECT max_images FROM config WHERE id = 1')
-    row = cur.fetchone()
-    max_images = row['max_images'] if row else None
-    if not max_images or max_images < 1:
-        conn.close()
-        return
-
-    cur.execute('SELECT COUNT(*) AS n FROM images')
-    total = cur.fetchone()['n']
-    if total > max_images:
-        excess = total - max_images
-        cur.execute('SELECT id, file_path FROM images ORDER BY id ASC LIMIT %s', (excess,))
-        for r in cur.fetchall():
-            _remove_file(r['file_path'])
-            cur.execute('DELETE FROM images WHERE id = %s', (r['id'],))
-        conn.commit()
-        log.info('[CLEANUP] %d ảnh > giới hạn %d → đã xóa %d ảnh cũ nhất', total, max_images, excess)
-    conn.close()
-
-
-def _remove_file(rel_path):
-    abs_path = os.path.join(BASE_DIR, rel_path)
-    if os.path.exists(abs_path):
-        try:
-            os.remove(abs_path)
-        except OSError as e:
-            log.warning('Lỗi xóa file %s: %s', abs_path, e)
-
-
-def _looks_like_image(head, ext):
-    if ext in ('.jpg', '.jpeg'):
-        return head[:3] == b'\xff\xd8\xff'
-    if ext == '.png':
-        return head[:8] == b'\x89PNG\r\n\x1a\n'
-    return False
-
-
-# ============ PHỤC VỤ FILE ẢNH ============
-@app.route('/uploads/<path:filename>')
-def uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
-
-# ============ API: ẢNH ============
-@app.route('/api/images', methods=['POST'])
-def upload_image():
-    if 'file' not in request.files:
-        return jsonify({'error': 'Thiếu field "file" trong form-data'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'Tên file rỗng'}), 400
-
-    ext = os.path.splitext(file.filename)[1].lower() or '.jpg'
-    if ext not in ALLOWED_EXT:
-        return jsonify({'error': 'Chỉ nhận .jpg / .jpeg / .png'}), 400
-    if not _looks_like_image(file.stream.read(8), ext):
-        return jsonify({'error': 'Nội dung file không phải ảnh JPEG/PNG hợp lệ'}), 400
-    file.stream.seek(0)
-
-    received_time = now_dt()
-    form = request.form
-    capture_time = normalize_time(form.get('capture_time')) or received_time
-    client_id = form.get('client_id')
-    client_capture_id = form.get('client_capture_id', type=int)
-
-    conn = get_db()
-    cur = conn.cursor()
-    # Client gửi lại ảnh đã nhận (mất gói phản hồi) → trả lại id cũ, không lưu trùng
-    if client_id and client_capture_id is not None:
-        cur.execute('''SELECT * FROM images WHERE client_id = %s AND client_capture_id = %s
-                       AND capture_time = %s''', (client_id, client_capture_id, capture_time))
-        dup = cur.fetchone()
-        if dup:
-            conn.close()
-            return jsonify({**to_json(dup), 'duplicate': True}), 201
-
-    unique_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}{ext}"
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
-    file.save(file_path)
-    file_size_kb = round(os.path.getsize(file_path) / 1024, 2)
-
-    cur.execute('''
-        INSERT INTO images (file_name, file_path, capture_time, received_time, file_size_kb,
-                            width, height, sent_time, client_id, client_capture_id, client_ip,
-                            original_name, source, interval_used, quality_used)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    ''', (unique_name, f'uploads/{unique_name}', capture_time, received_time, file_size_kb,
-          form.get('width', type=int), form.get('height', type=int),
-          normalize_time(form.get('sent_time')), client_id, client_capture_id,
-          request.remote_addr, file.filename, form.get('source'),
-          form.get('interval_used', type=int), form.get('quality_used', type=int)))
-    image_id = cur.lastrowid
-    touch_client(cur, client_id, 'upload')
-    conn.commit()
-    conn.close()
-
-    log.info('[RECV] #%d từ %s (%s) | %.2f KB | trễ chụp→nhận %ss', image_id,
-             client_id or '?', request.remote_addr, file_size_kb,
-             seconds_between(capture_time, received_time))
-    cleanup_old_images()
-
-    return jsonify({
-        'id': image_id,
-        'file_name': unique_name,
-        'file_path': f'uploads/{unique_name}',
-        'file_size_kb': file_size_kb,
-        'received_time': iso(received_time),
-    }), 201
-
-
-@app.route('/api/images', methods=['GET'])
-def list_images():
-    page = max(1, request.args.get('page', 1, type=int))
-    per_page = min(max(1, request.args.get('per_page', 20, type=int)), 100)
-    start = normalize_time(request.args.get('start'))
-    end = normalize_time(request.args.get('end'))
-    q = (request.args.get('q') or '').strip()
-
-    where, params = [], []
-    if start:
-        where.append('capture_time >= %s')
-        params.append(start)
-    if end:
-        where.append('capture_time <= %s')
-        params.append(end)
-    if q:
-        where.append('(file_name LIKE %s OR original_name LIKE %s OR client_id LIKE %s)')
-        params += [f'%{q}%'] * 3
-    where_sql = ('WHERE ' + ' AND '.join(where)) if where else ''
-
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(f'SELECT COUNT(*) AS n FROM images {where_sql}', params)
-    total = cur.fetchone()['n']
-    cur.execute(f'SELECT * FROM images {where_sql} ORDER BY id DESC LIMIT %s OFFSET %s',
-                params + [per_page, (page - 1) * per_page])
-    items = [to_json(r) for r in cur.fetchall()]
-    conn.close()
-
-    return jsonify({
-        'page': page,
-        'per_page': per_page,
-        'total': total,
-        'total_pages': (total + per_page - 1) // per_page,
-        'items': items,
-    })
-
-
-@app.route('/api/images/<int:image_id>', methods=['GET'])
-def get_image(image_id):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM images WHERE id = %s', (image_id,))
-    row = cur.fetchone()
-    conn.close()
-    if row is None:
-        return jsonify({'error': 'Không tìm thấy ảnh'}), 404
-    return jsonify(to_json(row))
-
-
-@app.route('/api/images/<int:image_id>', methods=['DELETE'])
-def delete_image(image_id):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute('SELECT file_path FROM images WHERE id = %s', (image_id,))
-    row = cur.fetchone()
-    if row is None:
-        conn.close()
-        return jsonify({'error': 'Không tìm thấy ảnh'}), 404
-    _remove_file(row['file_path'])
-    cur.execute('DELETE FROM images WHERE id = %s', (image_id,))
-    conn.commit()
-    conn.close()
-    log.info('[DELETE] #%d bởi %s', image_id, request.remote_addr)
-    return jsonify({'message': 'Đã xóa', 'id': image_id})
-
-
-@app.route('/api/images/<int:image_id>/displayed', methods=['POST'])
-def mark_displayed(image_id):
-    """Gallery gọi khi ảnh lần đầu hiện lên màn hình → đo độ trễ chụp → hiển thị."""
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute('UPDATE images SET displayed_time = %s WHERE id = %s AND displayed_time IS NULL',
-                (now_dt(), image_id))
-    conn.commit()
-    conn.close()
-    return jsonify({'id': image_id})
+app.register_blueprint(images_bp)
 
 
 # ============ API: CONFIG ============
