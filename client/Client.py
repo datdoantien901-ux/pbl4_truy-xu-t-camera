@@ -21,124 +21,23 @@ Chạy:  python Client.py                       (dùng client_config.json)
        python Client.py --server http://192.168.1.10:5000 --no-preview
 """
 import argparse
-import json
 import logging
 import os
 import queue
 import signal
-import sys
 import threading
 import time
 from datetime import datetime
-from logging.handlers import RotatingFileHandler
 
 import cv2
 import requests
 
 from local_store import LocalStore
-from video_source import VideoSource, mask_url
-
-# Đường dẫn tính theo vị trí file, không phụ thuộc thư mục đang đứng khi chạy
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, 'data')
-IMAGE_DIR = os.path.join(DATA_DIR, 'images')
-LOG_DIR = os.path.join(BASE_DIR, 'logs')
-DB_PATH = os.path.join(DATA_DIR, 'client.db')
-CONFIG_FILE = os.path.join(BASE_DIR, 'client_config.json')
-
-DEFAULT_SETTINGS = {
-    'client_id': 'client-01',
-    'source': {
-        'type': 'youtube',
-        'url': 'https://www.youtube.com/watch?v=oC8ttZHG50I',
-        'rtsp_transport': 'tcp',
-    },
-    'server_url': 'http://127.0.0.1:5000',
-    'capture': {'capture_interval': 5, 'jpeg_quality': 80, 'resize_width': 854},
-    'config_poll_interval': 10,
-    'upload_enabled': True,
-    'upload_queue_size': 50,
-    'show_preview': True,
-    'preview_fps': 5,
-}
+from settings import BASE_DIR, DB_PATH, IMAGE_DIR, load_settings, now_iso, setup_logging
+from shared_config import SharedConfig
+from video_source import VideoSource
 
 log = logging.getLogger('client')
-
-
-# ===================== TIỆN ÍCH =====================
-def now_iso():
-    """Thời gian ISO 8601 có mili-giây, thống nhất với Server: 2026-10-29T22:15:03.512"""
-    return datetime.now().isoformat(timespec='milliseconds')
-
-
-def setup_logging():
-    os.makedirs(LOG_DIR, exist_ok=True)
-    fmt = logging.Formatter('%(asctime)s [%(threadName)-13s] %(levelname)-5s %(name)s: %(message)s')
-    file_h = RotatingFileHandler(os.path.join(LOG_DIR, 'client.log'),
-                                 maxBytes=2 * 1024 * 1024, backupCount=5, encoding='utf-8')
-    file_h.setFormatter(fmt)
-    console_h = logging.StreamHandler(sys.stdout)
-    console_h.setFormatter(fmt)
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-    root.handlers = [file_h, console_h]
-
-
-def deep_merge(base, override):
-    out = dict(base)
-    for k, v in override.items():
-        if isinstance(v, dict) and isinstance(out.get(k), dict):
-            out[k] = deep_merge(out[k], v)
-        else:
-            out[k] = v
-    return out
-
-
-def load_settings(args):
-    settings = dict(DEFAULT_SETTINGS)
-    path = args.config or CONFIG_FILE
-    if os.path.exists(path):
-        with open(path, encoding='utf-8') as f:
-            settings = deep_merge(settings, json.load(f))
-    # Biến môi trường (để không phải ghi mật khẩu camera vào file commit lên git)
-    if os.environ.get('CAMERA_URL'):
-        settings['source']['url'] = os.environ['CAMERA_URL']
-    # Tham số dòng lệnh ưu tiên cao nhất
-    if args.source_type:
-        settings['source']['type'] = args.source_type
-    if args.source_url:
-        settings['source']['url'] = args.source_url
-    if args.server:
-        settings['server_url'] = args.server
-    if args.no_preview:
-        settings['show_preview'] = False
-    settings['server_url'] = settings['server_url'].rstrip('/')
-    return settings
-
-
-# ===================== CẤU HÌNH DÙNG CHUNG =====================
-class SharedConfig:
-    """Tham số thu nhận, được ConfigThread ghi và CaptureThread đọc → cần Lock."""
-
-    KEYS = ('capture_interval', 'jpeg_quality', 'resize_width')
-
-    def __init__(self, initial):
-        self._lock = threading.Lock()
-        self._cfg = {k: int(initial[k]) for k in self.KEYS}
-        self.version = 0
-
-    def get(self):
-        with self._lock:
-            return dict(self._cfg)
-
-    def update(self, new_cfg):
-        with self._lock:
-            new = {k: int(new_cfg.get(k, self._cfg[k])) for k in self.KEYS}
-            if new == self._cfg:
-                return None
-            old, self._cfg = self._cfg, new
-            self.version += 1
-            return old
 
 
 # ===================== LUỒNG CAPTURE (PRODUCER) =====================
