@@ -27,132 +27,17 @@ import queue
 import signal
 import threading
 import time
-from datetime import datetime
 
 import cv2
 import requests
 
+from capture_thread import CaptureThread
 from local_store import LocalStore
 from settings import BASE_DIR, DB_PATH, IMAGE_DIR, load_settings, now_iso, setup_logging
 from shared_config import SharedConfig
 from video_source import VideoSource
 
 log = logging.getLogger('client')
-
-
-# ===================== LUỒNG CAPTURE (PRODUCER) =====================
-class CaptureThread(threading.Thread):
-    def __init__(self, settings, source, store, shared_cfg, upload_q, enqueued, stop_event):
-        super().__init__(name='CaptureThread', daemon=True)
-        self.settings = settings
-        self.source = source
-        self.store = store
-        self.cfg = shared_cfg
-        self.upload_q = upload_q
-        self.enqueued = enqueued          # (set, lock) để không đưa trùng ảnh vào hàng đợi
-        self.stop_event = stop_event
-        self.preview_lock = threading.Lock()
-        self.preview_frame = None
-        self.captured = 0
-
-    def run(self):
-        backoff = 2
-        while not self.stop_event.is_set():
-            try:
-                self.source.open()
-                backoff = 2
-            except Exception as e:
-                log.warning('Không mở được nguồn video (%s) → thử lại sau %ds',
-                            str(e).replace('ERROR: ', '').rstrip('.'), backoff)
-                self.stop_event.wait(backoff)
-                backoff = min(backoff * 2, 30)
-                continue
-
-            self._capture_loop()
-            self.source.release()
-        log.info('CaptureThread dừng (đã chụp %d ảnh)', self.captured)
-
-    def _capture_loop(self):
-        last_capture = 0.0
-        last_preview = 0.0
-        preview_period = 1.0 / max(1, self.settings['preview_fps'])
-
-        while not self.stop_event.is_set():
-            # grab() liên tục để rút frame khỏi buffer → ảnh chụp luôn là ảnh mới nhất
-            if not self.source.grab():
-                log.warning('Mất luồng video. Kết nối lại...')
-                return
-
-            now = time.time()
-            cfg = self.cfg.get()
-
-            if now - last_capture >= cfg['capture_interval']:
-                ok, frame = self.source.retrieve()
-                if ok:
-                    last_capture = now
-                    self._handle_snapshot(frame, cfg)
-
-            if self.settings['show_preview'] and now - last_preview >= preview_period:
-                ok, frame = self.source.retrieve()
-                if ok:
-                    with self.preview_lock:
-                        self.preview_frame = frame
-                last_preview = now
-
-    def _handle_snapshot(self, frame, cfg):
-        dt = datetime.now()
-        capture_time = dt.isoformat(timespec='milliseconds')
-
-        # Xử lý ảnh bằng OpenCV: resize + nén JPEG theo cấu hình
-        h, w = frame.shape[:2]
-        if cfg['resize_width'] and cfg['resize_width'] != w:
-            new_h = int(h * cfg['resize_width'] / w)
-            frame = cv2.resize(frame, (cfg['resize_width'], new_h), interpolation=cv2.INTER_AREA)
-        ok, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, cfg['jpeg_quality']])
-        if not ok:
-            log.error('Nén JPEG thất bại')
-            return
-        jpg = buf.tobytes()
-        out_h, out_w = frame.shape[:2]
-
-        # Lưu theo thư mục ngày, tên file theo timestamp
-        day_dir = os.path.join(IMAGE_DIR, dt.strftime('%Y-%m-%d'))
-        os.makedirs(day_dir, exist_ok=True)
-        file_name = f"cam_{dt.strftime('%Y%m%d_%H%M%S')}_{dt.microsecond // 1000:03d}.jpg"
-        file_path = os.path.join(day_dir, file_name)
-
-        # Ghi atomic: ghi file tạm rồi rename → không bao giờ để lại file ảnh hỏng dở
-        tmp_path = file_path + '.tmp'
-        with open(tmp_path, 'wb') as f:
-            f.write(jpg)
-        os.replace(tmp_path, file_path)
-
-        size_kb = round(len(jpg) / 1024, 2)
-        rel_path = os.path.relpath(file_path, BASE_DIR).replace('\\', '/')
-        capture_id = self.store.add_capture(
-            file_name, rel_path, capture_time, size_kb, out_w, out_h,
-            self.source.type, cfg['capture_interval'], cfg['jpeg_quality'])
-        self.captured += 1
-
-        queued = False
-        if self.settings['upload_enabled']:
-            ids, lock = self.enqueued
-            with lock:
-                try:
-                    self.upload_q.put_nowait(capture_id)
-                    ids.add(capture_id)
-                    queued = True
-                except queue.Full:
-                    pass  # hàng đợi đầy → ảnh vẫn nằm trong DB, UploadThread sẽ gửi bù sau
-
-        log.info('[SAVE] #%d %s | %.2f KB | %dx%d | interval=%ds q=%d | %s',
-                 capture_id, file_name, size_kb, out_w, out_h,
-                 cfg['capture_interval'], cfg['jpeg_quality'],
-                 'đã vào hàng đợi' if queued else 'chờ gửi bù')
-
-    def latest_preview(self):
-        with self.preview_lock:
-            return self.preview_frame
 
 
 # ===================== LUỒNG UPLOAD (CONSUMER) =====================
