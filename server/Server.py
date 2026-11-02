@@ -29,81 +29,18 @@ from datetime import datetime
 from flask import Flask, abort, jsonify, render_template, request
 from flask_cors import CORS
 
-from db import get_db, init_db, to_json, touch_client
+from db import get_db, init_db, to_json
+from routes.config import config_bp
 from routes.images import images_bp
-from settings import CONFIG_LIMITS, MAX_CONTENT_LENGTH, UPLOAD_FOLDER, log
-from storage import cleanup_old_images
-from timeutil import iso, now_dt, seconds_between
+from settings import MAX_CONTENT_LENGTH, UPLOAD_FOLDER, log
+from timeutil import iso, seconds_between
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 CORS(app)
 app.register_blueprint(images_bp)
-
-
-# ============ API: CONFIG ============
-@app.route('/api/config', methods=['GET'])
-def get_config():
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM config WHERE id = 1')
-    row = to_json(cur.fetchone())
-    touch_client(cur, request.args.get('client_id'), 'config_poll')
-    conn.commit()
-    conn.close()
-    return jsonify(row)
-
-
-@app.route('/api/config', methods=['POST'])
-def update_config():
-    data = request.get_json(silent=True) or {}
-    fields = {}
-    for key, lo, hi in CONFIG_LIMITS:
-        if key in data:
-            try:
-                v = int(data[key])
-            except (ValueError, TypeError):
-                return jsonify({'error': f'{key} không phải số'}), 400
-            if not (lo <= v <= hi):
-                return jsonify({'error': f'{key} phải trong [{lo}, {hi}]'}), 400
-            fields[key] = v
-    if not fields:
-        return jsonify({'error': 'Không có field hợp lệ nào'}), 400
-
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM config WHERE id = 1')
-    old = cur.fetchone()
-    changed_at = now_dt()
-    for k, v in fields.items():
-        if old.get(k) != v:
-            cur.execute('''INSERT INTO config_history (changed_at, field, old_value, new_value, changed_by)
-                           VALUES (%s, %s, %s, %s, %s)''', (changed_at, k, old.get(k), v, request.remote_addr))
-            log.info('[CONFIG] %s: %s → %s (bởi %s)', k, old.get(k), v, request.remote_addr)
-
-    fields['updated_at'] = changed_at
-    set_clause = ', '.join(f'{k} = %s' for k in fields)
-    cur.execute(f'UPDATE config SET {set_clause} WHERE id = 1', list(fields.values()))
-    conn.commit()
-    cur.execute('SELECT * FROM config WHERE id = 1')
-    row = to_json(cur.fetchone())
-    conn.close()
-
-    if 'max_images' in fields:
-        cleanup_old_images()
-    return jsonify(row)
-
-
-@app.route('/api/config/history', methods=['GET'])
-def config_history():
-    limit = min(max(1, request.args.get('limit', 50, type=int)), 500)
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM config_history ORDER BY id DESC LIMIT %s', (limit,))
-    rows = [to_json(r) for r in cur.fetchall()]
-    conn.close()
-    return jsonify(rows)
+app.register_blueprint(config_bp)
 
 
 # ============ API: GIÁM SÁT ============
