@@ -48,12 +48,12 @@ Chưa có bộ test tự động trong repo. Kiểm thử bằng cách chạy Se
 Mỗi chức năng một file — sửa lỗi chức năng nào thì vào đúng file đó (bảng "Cấu trúc thư mục" trong README.md).
 
 ### Client (`client/`)
-- `Client.py`: chỉ khởi động — đọc tham số, tạo 3 luồng + luồng chính (preview), dừng khi có tín hiệu.
+- `Client.py`: chỉ khởi động — đọc tham số, tạo **1 `CaptureThread` cho mỗi camera** trong `"cameras"` + `UploadThread` + `ConfigThread` + luồng chính (preview 1 camera, phím 1/2/Tab đổi camera, `--view`), dừng khi có tín hiệu.
   - `capture_thread.py` — `CaptureThread` (producer): đọc frame, lưu file ảnh **atomic** (ghi file tạm → `os.replace`), ghi `LocalStore`, đẩy id vào `queue.Queue` có giới hạn.
   - `upload_thread.py` — `UploadThread` (consumer): gửi multipart lên `POST /api/images`, retry; định kỳ quét ảnh `pending` trong DB để **gửi bù** khi mất mạng.
   - `config_thread.py` — `ConfigThread`: mỗi `config_poll_interval` giây gọi `GET /api/config?client_id=...`, cập nhật `SharedConfig` (`shared_config.py`, có `threading.Lock`).
   - Dừng bằng `threading.Event` khi nhận SIGINT/SIGTERM.
-  - `settings.py`: đường dẫn, `DEFAULT_SETTINGS`, `load_settings()`, log. Thứ tự ưu tiên cấu hình: `DEFAULT_SETTINGS` < `client_config.json` < biến môi trường `CAMERA_URL` < tham số dòng lệnh.
+  - `settings.py`: đường dẫn, `DEFAULT_SETTINGS`, `load_settings()`, `load_cameras()` (mỗi camera `{id, name, source}`; `url_env` lấy link từ `client/.env`), log. Trường `source` của ảnh gửi lên Server = **id camera**. Thứ tự ưu tiên cấu hình: `DEFAULT_SETTINGS` < `client_config.json` < biến môi trường (`CAMERA_URL`, `url_env`; đọc cả `client/.env`) < tham số dòng lệnh (`--source-type/--source-url` → chỉ chạy 1 nguồn).
 - `video_source.py`: lớp `VideoSource` (OpenCV; YouTube được phân giải URL bằng yt-dlp; RTSP ép TCP).
 - `local_store.py`: SQLite WAL `client/data/client.db`, vừa là kho metadata vừa là hàng đợi gửi bù. Mỗi thao tác mở connection riêng (không chia sẻ giữa luồng).
 

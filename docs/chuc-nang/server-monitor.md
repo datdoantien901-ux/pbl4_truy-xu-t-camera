@@ -18,4 +18,5 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-02 | `feature/client-multi-camera` | Sửa lỗi | `actual_gap` tính theo từng (client_id, source) — trước đây 1 Client gửi ảnh 2 camera xen kẽ cho ra khoảng cách sai (1s/4s thay vì 5s); thêm trường `source` vào từng item của `/api/stats` | routes/monitor.py |
 | 2026-11-02 | `refactor/server-monitor` · `257d65c` | Tái cấu trúc | Tách `/api/stats`, `/api/clients` ra `routes/monitor.py` (Blueprint `monitor`) | routes/monitor.py, Server.py |

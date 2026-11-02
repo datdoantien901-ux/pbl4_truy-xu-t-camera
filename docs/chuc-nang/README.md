@@ -10,7 +10,7 @@ Mã chức năng trùng với tên nhánh (`refactor/<mã>`, `fix/<mã>`, `featu
 | [`server-config`](server-config.md) | API cấu hình từ xa | `config.py` | 1 |
 | [`server-monitor`](server-monitor.md) | giám sát, thống kê độ trễ | `monitor.py` | 1 |
 | [`server-web`](server-web.md) | giao diện web | `web.py`, `*.html`, `style.css` | 1 |
-| [`client-core`](client-core.md) | lõi (cấu hình, log, khởi động) | `Client.py`, `settings.py`, `shared_config.py`, `client_config.json` | 3 |
+| [`client-core`](client-core.md) | lõi (cấu hình, log, khởi động) | `Client.py`, `settings.py`, `shared_config.py`, `client_config.json`, `.env.example` | 2 |
 | [`client-source`](client-source.md) | nguồn video | `video_source.py` | 1 |
 | [`client-store`](client-store.md) | lưu trữ cục bộ (SQLite) | `local_store.py` | 0 |
 | [`client-capture`](client-capture.md) | luồng chụp ảnh | `capture_thread.py` | 0 |

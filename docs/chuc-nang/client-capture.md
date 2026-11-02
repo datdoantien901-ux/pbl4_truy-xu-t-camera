@@ -18,4 +18,5 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-02 | `feature/client-multi-camera` | Tính năng | Mỗi camera 1 luồng `Capture-<id>`: ảnh lưu `data/images/<id>/<ngày>/<id>_<thời gian>.jpg`, `source` = id camera; chỉ camera đang xem mới giải mã preview (`set_preview_active`), cờ `connected` cho màn hình chờ | capture_thread.py |
 | 2026-11-02 | `refactor/client-capture` · `9c2e642` | Tái cấu trúc | Tách `CaptureThread` ra `capture_thread.py` | Client.py, capture_thread.py |

@@ -104,14 +104,28 @@ python Server.py
 
 ### 2. Client
 
-Sửa `client/client_config.json` (nguồn video, địa chỉ server), rồi chạy:
+Sửa `client/client_config.json` (danh sách camera, địa chỉ server), rồi chạy:
 
 ```bash
 cd client
-python Client.py
+python Client.py               # chạy mọi camera trong "cameras"
+python Client.py --view nha    # cửa sổ preview mở camera "nha" trước (hoặc --view 2)
 ```
 
-Có thể ghi đè cấu hình bằng tham số dòng lệnh:
+#### Nhiều camera cùng lúc (YouTube + camera nhà)
+
+Mảng `"cameras"` trong `client_config.json`: mỗi camera chạy **một luồng chụp riêng**, dùng chung luồng gửi ảnh và luồng lấy cấu hình. Mặc định có 2 camera:
+
+| id | Nguồn | Link lấy từ |
+|---|---|---|
+| `youtube` | YouTube kênh 0511 | `source.url` trong `client_config.json` |
+| `nha` | Camera nhà (mặc định RTSP) | biến `CAMERA_NHA_URL` trong `client/.env` (chép từ `client/.env.example`, có mẫu link theo hãng camera) |
+
+- Camera chưa có link → bị bỏ qua kèm cảnh báo, camera còn lại vẫn chạy. Tắt tạm 1 camera: `"enabled": false`.
+- Cửa sổ preview hiện **1 camera**: nhấn `1`, `2`… hoặc `Tab` để đổi camera đang xem, `q` để thoát.
+- Ảnh lưu ở `client/data/images/<id camera>/<ngày>/`, gửi lên Server với trường `source` = id camera (xem ở trang chi tiết ảnh).
+
+Có thể ghi đè cấu hình bằng tham số dòng lệnh (chỉ định `--source-type` / `--source-url` → chỉ chạy đúng 1 nguồn đó):
 
 ```bash
 python Client.py --source-type rtsp --source-url rtsp://192.168.1.15:8554/live --server http://192.168.1.10:5000
@@ -119,7 +133,7 @@ python Client.py --source-type webcam --source-url 0
 python Client.py --source-type file --source-url video_test.mp4 --no-preview
 ```
 
-Trong cửa sổ preview, nhấn `q` để thoát, hoặc nhấn Ctrl+C trong terminal.
+Trong cửa sổ preview, nhấn `1`/`2`/`Tab` để đổi camera, `q` để thoát, hoặc nhấn Ctrl+C trong terminal.
 
 ## Nguồn video
 
@@ -132,7 +146,7 @@ Trong cửa sổ preview, nhấn `q` để thoát, hoặc nhấn Ctrl+C trong te
 | `file` | `video_test.mp4` | Test khi không có camera (phát lặp lại) |
 | `youtube` | `https://www.youtube.com/@0511.VietNam/live` | Camera công cộng 0511 (luồng đang phát của kênh). Nếu báo lỗi, vào tab *Trực tiếp* của kênh, mở một video đang LIVE và dán link `watch?v=...` |
 
-**Không commit mật khẩu camera lên git.** Đặt URL qua biến môi trường thay vì ghi vào file:
+**Không commit mật khẩu camera lên git.** Ghi link vào `client/.env` (không commit, xem `client/.env.example`) hoặc đặt biến môi trường:
 
 ```bash
 CAMERA_URL="rtsp://admin:matkhau@192.168.1.20:554/stream1" python Client.py --source-type rtsp
