@@ -44,16 +44,29 @@ Hệ thống gồm 3 phần:
 
 ```
 client/
-  Client.py           chương trình chính (các luồng Capture / Upload / Config)
+  Client.py           điểm khởi động: đọc tham số, tạo và nối các luồng, cửa sổ preview
+  settings.py         đường dẫn, cấu hình mặc định, đọc cấu hình, log
+  shared_config.py    tham số chụp dùng chung giữa các luồng (có Lock)
+  capture_thread.py   luồng chụp ảnh (producer): đọc frame, nén JPEG, lưu file + SQLite
+  upload_thread.py    luồng gửi ảnh (consumer): POST lên Server, retry, gửi bù
+  config_thread.py    luồng lấy cấu hình từ Server định kỳ
   video_source.py     lớp VideoSource: rtsp | http | webcam | file | youtube
   local_store.py      SQLite cục bộ, đồng thời là hàng đợi gửi bù
   client_config.json  cấu hình Client
   data/               ảnh + client.db (tự tạo, không commit)
   logs/client.log     log hoạt động (tự tạo)
 server/
-  Server.py           REST API + Web
+  Server.py           điểm khởi động: tạo Flask app, đăng ký các nhóm route
+  settings.py         cấu hình (đường dẫn, MySQL, giới hạn tham số) + log
+  timeutil.py         xử lý thời gian DATETIME(3) ↔ chuỗi ISO, tính độ trễ
+  db.py               kết nối MySQL, tạo / nâng cấp bảng
+  storage.py          file ảnh trong uploads/: kiểm tra, xóa, dọn ảnh cũ
+  routes/images.py    API ảnh       /api/images..., /uploads/<file>
+  routes/config.py    API cấu hình  /api/config, /api/config/history
+  routes/monitor.py   API giám sát  /api/stats, /api/clients
+  routes/web.py       các trang web /, /manage, /config, /stats, /image/<id>
   templates/, static/ giao diện
-  schema.sql          schema MySQL (Server.py cũng tự tạo khi chạy)
+  schema.sql          schema MySQL (db.py cũng tự tạo khi chạy)
   migrate_sqlite_to_mysql.py  chuyển dữ liệu cũ từ server.db (SQLite) sang MySQL
   uploads/            ảnh phía server
   logs/server.log     log hoạt động (tự tạo)
