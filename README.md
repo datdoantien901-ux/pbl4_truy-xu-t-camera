@@ -3,7 +3,7 @@
 Hệ thống gồm 3 phần:
 
 - **Client** (`client/`): kết nối Camera (RTSP / HTTP / webcam / file / YouTube), chụp ảnh theo chu kỳ, lưu cục bộ (file + SQLite) và gửi lên Server.
-- **Backend API** (`server/Server.py`): RESTful API bằng Flask, nhận và quản lý ảnh, cấu hình Client từ xa.
+- **Backend API** (`server/Server.py`): RESTful API bằng Flask + MySQL, nhận và quản lý ảnh, cấu hình Client từ xa.
 - **Website** (`server/templates/`): trang ảnh trực tiếp, trang quản lý (tìm kiếm / xem / xóa), trang cấu hình, trang thống kê độ trễ có biểu đồ. Màu sắc chỉnh trong `server/static/style.css` (các biến ở đầu file).
 
 ## Kiến trúc
@@ -20,7 +20,7 @@ Hệ thống gồm 3 phần:
  └──────────────────────────────────────────────────────────────┼─────────────┘
                                                                 │             ▼
  ┌───────────────────── SERVER (máy B) ──────────────────────────────────────────┐
- │ Flask REST API ── uploads/ + server.db (SQLite WAL)                            │
+ │ Flask REST API ── uploads/ + MySQL (InnoDB)                                    │
  │ Website: /  /manage  /config  /stats                                           │
  └────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -31,7 +31,7 @@ Hệ thống gồm 3 phần:
 - Đồng bộ giữa các luồng bằng `threading.Lock`, `queue.Queue` (bounded buffer) và `threading.Event`.
 - Bắt tín hiệu **SIGINT/SIGTERM** để dừng tuần tự các luồng và giải phóng tài nguyên.
 - Ghi file **atomic**: ghi ra file tạm rồi `os.replace`, nên không để lại file hỏng khi bị tắt đột ngột.
-- SQLite chế độ **WAL** cho phép đọc và ghi đồng thời.
+- Client: SQLite chế độ **WAL** cho phép đọc và ghi đồng thời. Server: MySQL InnoDB (khóa theo dòng), mỗi request một kết nối riêng.
 
 **Điểm chính về Mạng**
 
@@ -53,13 +53,15 @@ client/
 server/
   Server.py           REST API + Web
   templates/, static/ giao diện
-  uploads/, server.db ảnh và CSDL phía server
+  schema.sql          schema MySQL (Server.py cũng tự tạo khi chạy)
+  migrate_sqlite_to_mysql.py  chuyển dữ liệu cũ từ server.db (SQLite) sang MySQL
+  uploads/            ảnh phía server
   logs/server.log     log hoạt động (tự tạo)
 ```
 
 ## Cài đặt
 
-Yêu cầu Python 3.9 trở lên.
+Yêu cầu Python 3.9 trở lên và MySQL 8 (hoặc MariaDB 10.5+) cho Server.
 
 ```bash
 # Server
@@ -79,6 +81,9 @@ pip install -r requirements.txt
 cd server
 python Server.py
 ```
+
+- Server kết nối MySQL theo biến môi trường `MYSQL_HOST` (mặc định `localhost`), `MYSQL_PORT` (`3306`), `MYSQL_USER` (`root`), `MYSQL_PASSWORD` (rỗng), `MYSQL_DATABASE` (`pbl4_camera`). Database và các bảng tự tạo khi chạy lần đầu. Ví dụ trên PowerShell: `$env:MYSQL_PASSWORD="matkhau"; python Server.py`.
+- Có dữ liệu cũ trong `server.db` (SQLite)? Chạy một lần `python migrate_sqlite_to_mysql.py` để chép sang MySQL.
 
 - Mặc định server lắng nghe `0.0.0.0:5000`, nên máy khác trong mạng LAN truy cập được qua `http://<IP-máy-server>:5000`.
 - Đổi cổng: `PBL4_PORT=8000 python Server.py`. Trên Windows PowerShell: `$env:PBL4_PORT=8000; python Server.py`.

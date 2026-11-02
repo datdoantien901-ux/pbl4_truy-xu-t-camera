@@ -17,3 +17,7 @@ server/logs/
 
 # Cấu hình riêng trên từng máy (vd chứa mật khẩu camera)
 client/client_config.local.json
+
+# Server dùng MySQL; server.db chỉ còn là dữ liệu cũ để migrate. Ảnh server nhận về không commit
+*.db
+server/uploads/

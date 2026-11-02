@@ -16,17 +16,21 @@ Giám sát / kiểm thử:
     GET    /api/clients                các Client đang kết nối (IP, lần cuối thấy)
 Web: /  (gallery real-time)   /manage   /config   /stats   /image/<id>
 
+CSDL: MySQL, cấu hình qua biến môi trường MYSQL_HOST, MYSQL_PORT, MYSQL_USER,
+      MYSQL_PASSWORD, MYSQL_DATABASE (database và bảng tự tạo khi chạy).
+
 Chạy:  python Server.py               (mặc định lắng nghe 0.0.0.0:5000, debug tắt)
        PBL4_PORT=8000 python Server.py
 """
 import logging
 import os
-import sqlite3
 import statistics
 import uuid
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
+import pymysql
+import pymysql.cursors
 from flask import Flask, abort, jsonify, render_template, request, send_from_directory
 from flask_cors import CORS
 
@@ -34,7 +38,15 @@ from flask_cors import CORS
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 LOG_DIR = os.path.join(BASE_DIR, 'logs')
-DB_PATH = os.environ.get('PBL4_DB', os.path.join(BASE_DIR, 'server.db'))
+
+# --- MySQL: đổi trực tiếp ở đây hoặc đặt biến môi trường ---
+MYSQL_CONFIG = {
+    'host':     os.getenv('MYSQL_HOST', 'localhost'),
+    'port':     int(os.getenv('MYSQL_PORT', 3306)),
+    'user':     os.getenv('MYSQL_USER', 'root'),
+    'password': os.getenv('MYSQL_PASSWORD', ''),
+    'database': os.getenv('MYSQL_DATABASE', 'pbl4_camera'),
+}
 
 ALLOWED_EXT = ('.jpg', '.jpeg', '.png')
 CONFIG_LIMITS = [  # (tên, min, max)
@@ -64,14 +76,21 @@ if not log.handlers:
 
 
 # ============ THỜI GIAN ============
-def now_iso():
-    return datetime.now().isoformat(timespec='milliseconds')
+# Cột thời gian trong MySQL là DATETIME(3) → lưu đến mili giây (cần cho đo độ trễ).
+def _ms(dt):
+    return dt.replace(microsecond=dt.microsecond // 1000 * 1000)
+
+
+def now_dt():
+    return _ms(datetime.now())
 
 
 def parse_time(value):
-    """Chấp nhận '2026-10-13 10:17:07', '2026-10-13T10:17:07', '...07.512', '2026-10-13T10:17'."""
+    """Chấp nhận datetime, '2026-10-13 10:17:07', '2026-10-13T10:17:07', '...07.512', '2026-10-13T10:17'."""
     if not value:
         return None
+    if isinstance(value, datetime):
+        return value
     try:
         return datetime.fromisoformat(str(value).strip().replace(' ', 'T'))
     except ValueError:
@@ -79,8 +98,12 @@ def parse_time(value):
 
 
 def normalize_time(value):
-    """Mọi thời gian lưu trong DB đều dạng ISO 'YYYY-MM-DDTHH:MM:SS.mmm' để so sánh chuỗi đúng."""
+    """Chuỗi thời gian từ Client/Website → datetime (làm tròn mili giây) để lưu / lọc trong MySQL."""
     dt = parse_time(value)
+    return _ms(dt) if dt else None
+
+
+def iso(dt):
     return dt.isoformat(timespec='milliseconds') if dt else None
 
 
@@ -93,96 +116,142 @@ def seconds_between(a, b):
 
 # ============ DATABASE ============
 def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=10)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Mở kết nối MySQL (mỗi request 1 kết nối riêng). Mỗi dòng trả về là dict."""
+    return pymysql.connect(
+        host=MYSQL_CONFIG['host'],
+        port=MYSQL_CONFIG['port'],
+        user=MYSQL_CONFIG['user'],
+        password=MYSQL_CONFIG['password'],
+        database=MYSQL_CONFIG['database'],
+        charset='utf8mb4',
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+
+
+def to_json(row):
+    """Đổi các cột DATETIME sang chuỗi ISO 'YYYY-MM-DDTHH:MM:SS.mmm' (định dạng Website đang dùng)."""
+    if row is None:
+        return None
+    return {k: (iso(v) if isinstance(v, datetime) else v) for k, v in row.items()}
+
+
+def _columns(cur, table):
+    cur.execute('''SELECT COLUMN_NAME, DATA_TYPE, DATETIME_PRECISION, IS_NULLABLE
+                   FROM information_schema.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s''', (table,))
+    return {r['COLUMN_NAME']: r for r in cur.fetchall()}
 
 
 def _add_column(cur, table, col, decl):
-    cols = {r[1] for r in cur.execute(f'PRAGMA table_info({table})')}
-    if col not in cols:
+    if col not in _columns(cur, table):
         cur.execute(f'ALTER TABLE {table} ADD COLUMN {col} {decl}')
         log.info('Đã thêm cột %s.%s', table, col)
 
 
+def _add_index(cur, table, name, cols):
+    cur.execute('''SELECT 1 FROM information_schema.STATISTICS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND INDEX_NAME = %s
+                   LIMIT 1''', (table, name))
+    if cur.fetchone() is None:
+        cur.execute(f'CREATE INDEX {name} ON {table}({cols})')
+
+
+def _datetime_to_ms(cur, table):
+    """DB tạo bởi bản cũ dùng DATETIME (chỉ đến giây) → nâng lên DATETIME(3)."""
+    for col, info in _columns(cur, table).items():
+        if info['DATA_TYPE'] == 'datetime' and not info['DATETIME_PRECISION']:
+            null = 'NULL' if info['IS_NULLABLE'] == 'YES' else 'NOT NULL'
+            cur.execute(f'ALTER TABLE {table} MODIFY {col} DATETIME(3) {null}')
+            log.info('Đã đổi %s.%s sang DATETIME(3)', table, col)
+
+
 def init_db():
+    # 1. Tạo database nếu chưa có
+    conn = pymysql.connect(host=MYSQL_CONFIG['host'], port=MYSQL_CONFIG['port'],
+                           user=MYSQL_CONFIG['user'], password=MYSQL_CONFIG['password'],
+                           charset='utf8mb4')
+    with conn.cursor() as cur:
+        cur.execute(f"CREATE DATABASE IF NOT EXISTS `{MYSQL_CONFIG['database']}` "
+                    "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+    conn.close()
+
+    # 2. Tạo bảng (InnoDB khóa theo dòng → nhiều request đồng thời đọc/ghi không chặn nhau)
     conn = get_db()
     cur = conn.cursor()
-    cur.execute('PRAGMA journal_mode=WAL')  # nhiều request đồng thời đọc/ghi không khóa nhau
-
     cur.execute('''
         CREATE TABLE IF NOT EXISTS images (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_name     TEXT    NOT NULL,
-            file_path     TEXT    NOT NULL,
-            capture_time  TEXT,
-            received_time TEXT    NOT NULL,
-            file_size_kb  REAL,
-            width         INTEGER,
-            height        INTEGER
-        )
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            file_name     VARCHAR(255) NOT NULL,
+            file_path     VARCHAR(500) NOT NULL,
+            capture_time  DATETIME(3) NULL,
+            received_time DATETIME(3) NOT NULL,
+            file_size_kb  DOUBLE,
+            width         INT,
+            height        INT,
+            INDEX idx_capture_time (capture_time)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ''')
     # Các cột mới (tự thêm nếu DB cũ chưa có)
-    for col, decl in [('sent_time', 'TEXT'), ('displayed_time', 'TEXT'),
-                      ('client_id', 'TEXT'), ('client_capture_id', 'INTEGER'),
-                      ('client_ip', 'TEXT'), ('original_name', 'TEXT'), ('source', 'TEXT'),
-                      ('interval_used', 'INTEGER'), ('quality_used', 'INTEGER')]:
+    for col, decl in [('sent_time', 'DATETIME(3) NULL'), ('displayed_time', 'DATETIME(3) NULL'),
+                      ('client_id', 'VARCHAR(100)'), ('client_capture_id', 'INT'),
+                      ('client_ip', 'VARCHAR(45)'), ('original_name', 'VARCHAR(255)'),
+                      ('source', 'VARCHAR(255)'),
+                      ('interval_used', 'INT'), ('quality_used', 'INT')]:
         _add_column(cur, 'images', col, decl)
-    cur.execute('CREATE INDEX IF NOT EXISTS idx_images_capture ON images(capture_time)')
-    cur.execute('''CREATE INDEX IF NOT EXISTS idx_images_client_capture
-                   ON images(client_id, client_capture_id)''')
-    # Dữ liệu cũ lưu '2026-10-13 10:17:07' → đổi sang ISO để lọc theo thời gian chạy đúng
-    cur.execute("UPDATE images SET capture_time = REPLACE(capture_time, ' ', 'T') "
-                "WHERE capture_time LIKE '____-__-__ %'")
+    _datetime_to_ms(cur, 'images')
+    _add_index(cur, 'images', 'idx_images_client_capture', 'client_id, client_capture_id')
 
     cur.execute('''
         CREATE TABLE IF NOT EXISTS config (
-            id               INTEGER PRIMARY KEY CHECK (id = 1),
-            capture_interval INTEGER DEFAULT 5,
-            jpeg_quality     INTEGER DEFAULT 80,
-            resize_width     INTEGER DEFAULT 854,
-            max_images       INTEGER DEFAULT 100,
-            updated_at       TEXT
-        )
+            id               INT PRIMARY KEY,
+            capture_interval INT DEFAULT 5,
+            jpeg_quality     INT DEFAULT 80,
+            resize_width     INT DEFAULT 854,
+            max_images       INT DEFAULT 100,
+            updated_at       DATETIME(3),
+            CHECK (id = 1)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ''')
-    _add_column(cur, 'config', 'max_images', 'INTEGER DEFAULT 100')
+    _add_column(cur, 'config', 'max_images', 'INT DEFAULT 100')
+    _datetime_to_ms(cur, 'config')
     cur.execute('''
-        INSERT OR IGNORE INTO config
+        INSERT IGNORE INTO config
             (id, capture_interval, jpeg_quality, resize_width, max_images, updated_at)
-        VALUES (1, 5, 80, 854, 100, ?)
-    ''', (now_iso(),))
+        VALUES (1, 5, 80, 854, 100, %s)
+    ''', (now_dt(),))
 
     cur.execute('''
         CREATE TABLE IF NOT EXISTS config_history (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            changed_at TEXT NOT NULL,
-            field      TEXT NOT NULL,
-            old_value  INTEGER,
-            new_value  INTEGER,
-            changed_by TEXT
-        )
+            id         INT AUTO_INCREMENT PRIMARY KEY,
+            changed_at DATETIME(3) NOT NULL,
+            field      VARCHAR(50) NOT NULL,
+            old_value  INT,
+            new_value  INT,
+            changed_by VARCHAR(45)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ''')
     cur.execute('''
         CREATE TABLE IF NOT EXISTS clients (
-            client_id     TEXT PRIMARY KEY,
-            ip            TEXT,
-            last_seen     TEXT,
-            last_activity TEXT
-        )
+            client_id     VARCHAR(100) PRIMARY KEY,
+            ip            VARCHAR(45),
+            last_seen     DATETIME(3),
+            last_activity VARCHAR(50)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ''')
     conn.commit()
     conn.close()
-    log.info('Database sẵn sàng: %s', DB_PATH)
+    log.info('MySQL sẵn sàng: %s@%s:%s/%s', MYSQL_CONFIG['user'], MYSQL_CONFIG['host'],
+             MYSQL_CONFIG['port'], MYSQL_CONFIG['database'])
 
 
-def touch_client(conn, client_id, activity):
+def touch_client(cur, client_id, activity):
     if not client_id:
         return
-    conn.execute('''
-        INSERT INTO clients (client_id, ip, last_seen, last_activity) VALUES (?, ?, ?, ?)
-        ON CONFLICT(client_id) DO UPDATE SET ip = excluded.ip, last_seen = excluded.last_seen,
-                                             last_activity = excluded.last_activity
-    ''', (client_id, request.remote_addr, now_iso(), activity))
+    cur.execute('''
+        INSERT INTO clients (client_id, ip, last_seen, last_activity) VALUES (%s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE ip = VALUES(ip), last_seen = VALUES(last_seen),
+                                last_activity = VALUES(last_activity)
+    ''', (client_id, request.remote_addr, now_dt(), activity))
 
 
 # ============ DỌN DẸP ẢNH CŨ ============
@@ -190,20 +259,21 @@ def cleanup_old_images():
     """Nếu số ảnh vượt max_images → xóa ảnh cũ nhất (file + DB record)."""
     conn = get_db()
     cur = conn.cursor()
-    row = cur.execute('SELECT max_images FROM config WHERE id = 1').fetchone()
+    cur.execute('SELECT max_images FROM config WHERE id = 1')
+    row = cur.fetchone()
     max_images = row['max_images'] if row else None
     if not max_images or max_images < 1:
         conn.close()
         return
 
-    total = cur.execute('SELECT COUNT(*) FROM images').fetchone()[0]
+    cur.execute('SELECT COUNT(*) AS n FROM images')
+    total = cur.fetchone()['n']
     if total > max_images:
         excess = total - max_images
-        rows = cur.execute('SELECT id, file_path FROM images ORDER BY id ASC LIMIT ?',
-                           (excess,)).fetchall()
-        for r in rows:
+        cur.execute('SELECT id, file_path FROM images ORDER BY id ASC LIMIT %s', (excess,))
+        for r in cur.fetchall():
             _remove_file(r['file_path'])
-            cur.execute('DELETE FROM images WHERE id = ?', (r['id'],))
+            cur.execute('DELETE FROM images WHERE id = %s', (r['id'],))
         conn.commit()
         log.info('[CLEANUP] %d ảnh > giới hạn %d → đã xóa %d ảnh cũ nhất', total, max_images, excess)
     conn.close()
@@ -248,40 +318,40 @@ def upload_image():
         return jsonify({'error': 'Nội dung file không phải ảnh JPEG/PNG hợp lệ'}), 400
     file.stream.seek(0)
 
-    received_time = now_iso()
+    received_time = now_dt()
     form = request.form
     capture_time = normalize_time(form.get('capture_time')) or received_time
     client_id = form.get('client_id')
     client_capture_id = form.get('client_capture_id', type=int)
 
     conn = get_db()
+    cur = conn.cursor()
     # Client gửi lại ảnh đã nhận (mất gói phản hồi) → trả lại id cũ, không lưu trùng
     if client_id and client_capture_id is not None:
-        dup = conn.execute('''SELECT * FROM images WHERE client_id = ? AND client_capture_id = ?
-                              AND capture_time = ?''',
-                           (client_id, client_capture_id, capture_time)).fetchone()
+        cur.execute('''SELECT * FROM images WHERE client_id = %s AND client_capture_id = %s
+                       AND capture_time = %s''', (client_id, client_capture_id, capture_time))
+        dup = cur.fetchone()
         if dup:
             conn.close()
-            return jsonify({**dict(dup), 'duplicate': True}), 201
+            return jsonify({**to_json(dup), 'duplicate': True}), 201
 
     unique_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}{ext}"
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
     file.save(file_path)
     file_size_kb = round(os.path.getsize(file_path) / 1024, 2)
 
-    cur = conn.cursor()
     cur.execute('''
         INSERT INTO images (file_name, file_path, capture_time, received_time, file_size_kb,
                             width, height, sent_time, client_id, client_capture_id, client_ip,
                             original_name, source, interval_used, quality_used)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     ''', (unique_name, f'uploads/{unique_name}', capture_time, received_time, file_size_kb,
           form.get('width', type=int), form.get('height', type=int),
           normalize_time(form.get('sent_time')), client_id, client_capture_id,
           request.remote_addr, file.filename, form.get('source'),
           form.get('interval_used', type=int), form.get('quality_used', type=int)))
     image_id = cur.lastrowid
-    touch_client(conn, client_id, 'upload')
+    touch_client(cur, client_id, 'upload')
     conn.commit()
     conn.close()
 
@@ -295,7 +365,7 @@ def upload_image():
         'file_name': unique_name,
         'file_path': f'uploads/{unique_name}',
         'file_size_kb': file_size_kb,
-        'received_time': received_time,
+        'received_time': iso(received_time),
     }), 201
 
 
@@ -309,21 +379,23 @@ def list_images():
 
     where, params = [], []
     if start:
-        where.append('capture_time >= ?')
+        where.append('capture_time >= %s')
         params.append(start)
     if end:
-        where.append('capture_time <= ?')
+        where.append('capture_time <= %s')
         params.append(end)
     if q:
-        where.append('(file_name LIKE ? OR original_name LIKE ? OR client_id LIKE ?)')
+        where.append('(file_name LIKE %s OR original_name LIKE %s OR client_id LIKE %s)')
         params += [f'%{q}%'] * 3
     where_sql = ('WHERE ' + ' AND '.join(where)) if where else ''
 
     conn = get_db()
-    total = conn.execute(f'SELECT COUNT(*) FROM images {where_sql}', params).fetchone()[0]
-    rows = conn.execute(f'''
-        SELECT * FROM images {where_sql} ORDER BY id DESC LIMIT ? OFFSET ?
-    ''', params + [per_page, (page - 1) * per_page]).fetchall()
+    cur = conn.cursor()
+    cur.execute(f'SELECT COUNT(*) AS n FROM images {where_sql}', params)
+    total = cur.fetchone()['n']
+    cur.execute(f'SELECT * FROM images {where_sql} ORDER BY id DESC LIMIT %s OFFSET %s',
+                params + [per_page, (page - 1) * per_page])
+    items = [to_json(r) for r in cur.fetchall()]
     conn.close()
 
     return jsonify({
@@ -331,29 +403,33 @@ def list_images():
         'per_page': per_page,
         'total': total,
         'total_pages': (total + per_page - 1) // per_page,
-        'items': [dict(r) for r in rows],
+        'items': items,
     })
 
 
 @app.route('/api/images/<int:image_id>', methods=['GET'])
 def get_image(image_id):
     conn = get_db()
-    row = conn.execute('SELECT * FROM images WHERE id = ?', (image_id,)).fetchone()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM images WHERE id = %s', (image_id,))
+    row = cur.fetchone()
     conn.close()
     if row is None:
         return jsonify({'error': 'Không tìm thấy ảnh'}), 404
-    return jsonify(dict(row))
+    return jsonify(to_json(row))
 
 
 @app.route('/api/images/<int:image_id>', methods=['DELETE'])
 def delete_image(image_id):
     conn = get_db()
-    row = conn.execute('SELECT file_path FROM images WHERE id = ?', (image_id,)).fetchone()
+    cur = conn.cursor()
+    cur.execute('SELECT file_path FROM images WHERE id = %s', (image_id,))
+    row = cur.fetchone()
     if row is None:
         conn.close()
         return jsonify({'error': 'Không tìm thấy ảnh'}), 404
     _remove_file(row['file_path'])
-    conn.execute('DELETE FROM images WHERE id = ?', (image_id,))
+    cur.execute('DELETE FROM images WHERE id = %s', (image_id,))
     conn.commit()
     conn.close()
     log.info('[DELETE] #%d bởi %s', image_id, request.remote_addr)
@@ -364,8 +440,9 @@ def delete_image(image_id):
 def mark_displayed(image_id):
     """Gallery gọi khi ảnh lần đầu hiện lên màn hình → đo độ trễ chụp → hiển thị."""
     conn = get_db()
-    conn.execute('UPDATE images SET displayed_time = ? WHERE id = ? AND displayed_time IS NULL',
-                 (now_iso(), image_id))
+    cur = conn.cursor()
+    cur.execute('UPDATE images SET displayed_time = %s WHERE id = %s AND displayed_time IS NULL',
+                (now_dt(), image_id))
     conn.commit()
     conn.close()
     return jsonify({'id': image_id})
@@ -375,8 +452,10 @@ def mark_displayed(image_id):
 @app.route('/api/config', methods=['GET'])
 def get_config():
     conn = get_db()
-    row = dict(conn.execute('SELECT * FROM config WHERE id = 1').fetchone())
-    touch_client(conn, request.args.get('client_id'), 'config_poll')
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM config WHERE id = 1')
+    row = to_json(cur.fetchone())
+    touch_client(cur, request.args.get('client_id'), 'config_poll')
     conn.commit()
     conn.close()
     return jsonify(row)
@@ -399,19 +478,22 @@ def update_config():
         return jsonify({'error': 'Không có field hợp lệ nào'}), 400
 
     conn = get_db()
-    old = dict(conn.execute('SELECT * FROM config WHERE id = 1').fetchone())
-    changed_at = now_iso()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM config WHERE id = 1')
+    old = cur.fetchone()
+    changed_at = now_dt()
     for k, v in fields.items():
         if old.get(k) != v:
-            conn.execute('''INSERT INTO config_history (changed_at, field, old_value, new_value, changed_by)
-                            VALUES (?, ?, ?, ?, ?)''', (changed_at, k, old.get(k), v, request.remote_addr))
+            cur.execute('''INSERT INTO config_history (changed_at, field, old_value, new_value, changed_by)
+                           VALUES (%s, %s, %s, %s, %s)''', (changed_at, k, old.get(k), v, request.remote_addr))
             log.info('[CONFIG] %s: %s → %s (bởi %s)', k, old.get(k), v, request.remote_addr)
 
     fields['updated_at'] = changed_at
-    set_clause = ', '.join(f'{k} = ?' for k in fields)
-    conn.execute(f'UPDATE config SET {set_clause} WHERE id = 1', list(fields.values()))
+    set_clause = ', '.join(f'{k} = %s' for k in fields)
+    cur.execute(f'UPDATE config SET {set_clause} WHERE id = 1', list(fields.values()))
     conn.commit()
-    row = dict(conn.execute('SELECT * FROM config WHERE id = 1').fetchone())
+    cur.execute('SELECT * FROM config WHERE id = 1')
+    row = to_json(cur.fetchone())
     conn.close()
 
     if 'max_images' in fields:
@@ -423,23 +505,30 @@ def update_config():
 def config_history():
     limit = min(max(1, request.args.get('limit', 50, type=int)), 500)
     conn = get_db()
-    rows = conn.execute('SELECT * FROM config_history ORDER BY id DESC LIMIT ?', (limit,)).fetchall()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM config_history ORDER BY id DESC LIMIT %s', (limit,))
+    rows = [to_json(r) for r in cur.fetchall()]
     conn.close()
-    return jsonify([dict(r) for r in rows])
+    return jsonify(rows)
 
 
 # ============ API: GIÁM SÁT ============
 @app.route('/api/clients', methods=['GET'])
 def list_clients():
     conn = get_db()
-    rows = [dict(r) for r in conn.execute('SELECT * FROM clients ORDER BY last_seen DESC')]
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM clients ORDER BY last_seen DESC')
+    rows = cur.fetchall()
     conn.close()
     now = datetime.now()
+    result = []
     for r in rows:
-        seen = parse_time(r['last_seen'])
-        r['seconds_ago'] = round((now - seen).total_seconds(), 1) if seen else None
-        r['online'] = r['seconds_ago'] is not None and r['seconds_ago'] < 30
-    return jsonify(rows)
+        seen = r['last_seen']
+        item = to_json(r)
+        item['seconds_ago'] = round((now - seen).total_seconds(), 1) if seen else None
+        item['online'] = item['seconds_ago'] is not None and item['seconds_ago'] < 30
+        result.append(item)
+    return jsonify(result)
 
 
 def _summary(values):
@@ -464,9 +553,11 @@ def stats():
     """
     limit = min(max(2, request.args.get('limit', 100, type=int)), 1000)
     conn = get_db()
-    rows = [dict(r) for r in conn.execute(
-        'SELECT * FROM images ORDER BY capture_time DESC, id DESC LIMIT ?', (limit,))]
-    total = conn.execute('SELECT COUNT(*) FROM images').fetchone()[0]
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM images ORDER BY capture_time DESC, id DESC LIMIT %s', (limit,))
+    rows = cur.fetchall()
+    cur.execute('SELECT COUNT(*) AS n FROM images')
+    total = cur.fetchone()['n']
     conn.close()
 
     rows.reverse()  # cũ → mới để tính khoảng cách giữa các lần chụp
@@ -480,7 +571,7 @@ def stats():
         items.append({
             'id': r['id'],
             'client_id': r.get('client_id'),
-            'capture_time': r['capture_time'],
+            'capture_time': iso(r['capture_time']),
             'interval_used': r.get('interval_used'),
             'actual_gap': gap,
             'capture_to_received': seconds_between(r['capture_time'], r['received_time']),
@@ -524,13 +615,15 @@ def page_stats():
 @app.route('/image/<int:image_id>')
 def page_detail(image_id):
     conn = get_db()
-    row = conn.execute('SELECT * FROM images WHERE id = ?', (image_id,)).fetchone()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM images WHERE id = %s', (image_id,))
+    row = cur.fetchone()
     conn.close()
     if row is None:
         abort(404)
-    img = dict(row)
-    img['capture_to_received'] = seconds_between(img['capture_time'], img['received_time'])
-    img['capture_to_display'] = seconds_between(img['capture_time'], img.get('displayed_time'))
+    img = to_json(row)
+    img['capture_to_received'] = seconds_between(row['capture_time'], row['received_time'])
+    img['capture_to_display'] = seconds_between(row['capture_time'], row.get('displayed_time'))
     return render_template('detail.html', image=img)
 
 
