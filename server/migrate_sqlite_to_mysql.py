@@ -9,8 +9,11 @@ Chạy lại nhiều lần không bị trùng: dòng nào đã có (cùng khóa 
 import os
 import sqlite3
 
-# import Server sẽ tự chạy init_db() → database + bảng bên MySQL đã sẵn sàng
-from Server import BASE_DIR, get_db, normalize_time
+from db import get_db, init_db
+from settings import BASE_DIR
+from timeutil import normalize_time
+
+init_db()  # tạo database + bảng bên MySQL nếu chưa có
 
 SQLITE_PATH = os.path.join(BASE_DIR, 'server.db')
 
