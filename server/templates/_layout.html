@@ -75,6 +75,27 @@ function latency(a, b) {
   return (new Date(b) - new Date(a)) / 1000;
 }
 
+// Ô chọn camera (Ảnh trực tiếp, Quản lý ảnh): "Tất cả camera" + danh sách từ /api/cameras.
+// Camera đang chọn lưu trên URL (?camera=nha) → tải lại trang / gửi link vẫn giữ lựa chọn.
+function cameraFromUrl() { return new URLSearchParams(location.search).get('camera') || ''; }
+function cameraToUrl(cam) {
+  const u = new URL(location.href);
+  if (cam) u.searchParams.set('camera', cam); else u.searchParams.delete('camera');
+  history.replaceState(null, '', u);
+}
+async function fillCameraSelect(select, current) {
+  let cams;
+  try { cams = await (await fetch('/api/cameras')).json(); } catch { return; }
+  if (current && !cams.some(c => c.id === current)) cams.push({id: current, image_count: 0});
+  const opts = [['', 'Tất cả camera'],
+                ...cams.map(c => [c.id, `${c.id} (${c.image_count ? c.image_count + ' ảnh' : 'chưa có ảnh'})`])];
+  const sig = JSON.stringify(opts);
+  if (select.dataset.sig === sig) return;   // không đổi → không vẽ lại (tránh đóng ô chọn đang mở)
+  select.dataset.sig = sig;
+  select.replaceChildren(...opts.map(([v, t]) => el('option', {value: v}, t)));
+  select.value = current;
+}
+
 async function refreshClients() {
   const box = document.getElementById('clientList');
   try {

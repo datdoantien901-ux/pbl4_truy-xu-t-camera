@@ -18,4 +18,5 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-02 | `feature/web-camera-filter` | Tính năng | `GET /api/config` nhận `cameras=youtube,nha` (lọc id hợp lệ, bỏ trùng) → lưu vào `clients.cameras` | routes/config.py |
 | 2026-11-02 | `refactor/server-config` · `cae1685` | Tái cấu trúc | Tách API cấu hình ra `routes/config.py` (Blueprint `config`) | routes/config.py, Server.py |

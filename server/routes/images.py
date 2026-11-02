@@ -2,7 +2,7 @@
 API ảnh:
     GET    /uploads/<file>             trả file ảnh
     POST   /api/images                 nhận ảnh mới (multipart/form-data)
-    GET    /api/images                 danh sách (phân trang, lọc theo thời gian)
+    GET    /api/images                 danh sách (phân trang, lọc theo thời gian, ?camera=<id>)
     GET    /api/images/<id>            chi tiết 1 ảnh
     DELETE /api/images/<id>            xóa ảnh
     POST   /api/images/<id>/displayed  trình duyệt báo ảnh đã hiển thị (đo độ trễ)
@@ -101,8 +101,12 @@ def list_images():
     start = normalize_time(request.args.get('start'))
     end = normalize_time(request.args.get('end'))
     q = (request.args.get('q') or '').strip()
+    camera = (request.args.get('camera') or '').strip()   # id camera = cột source
 
     where, params = [], []
+    if camera:
+        where.append('source = %s')
+        params.append(camera)
     if start:
         where.append('capture_time >= %s')
         params.append(start)

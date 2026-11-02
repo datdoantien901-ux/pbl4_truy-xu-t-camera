@@ -63,7 +63,7 @@ server/
   storage.py          file ảnh trong uploads/: kiểm tra, xóa, dọn ảnh cũ
   routes/images.py    API ảnh       /api/images..., /uploads/<file>
   routes/config.py    API cấu hình  /api/config, /api/config/history
-  routes/monitor.py   API giám sát  /api/stats, /api/clients
+  routes/monitor.py   API giám sát  /api/stats, /api/clients, /api/cameras
   routes/web.py       các trang web /, /manage, /config, /stats, /image/<id>
   templates/, static/ giao diện
   schema.sql          schema MySQL (db.py cũng tự tạo khi chạy)
@@ -123,6 +123,7 @@ Mảng `"cameras"` trong `client_config.json`: mỗi camera chạy **một luồ
 
 - Camera chưa có link → bị bỏ qua kèm cảnh báo, camera còn lại vẫn chạy. Tắt tạm 1 camera: `"enabled": false`.
 - Cửa sổ preview hiện **1 camera**: nhấn `1`, `2`… hoặc `Tab` để đổi camera đang xem, `q` để thoát.
+- Website: ô **Camera** ở trang *Ảnh trực tiếp* và *Quản lý ảnh* (Tất cả / youtube / nha) — chỉ hiện ảnh của camera đã chọn; lựa chọn nằm trên URL (`/?camera=nha`). Camera Client khai báo nhưng chưa gửi ảnh vẫn có trong ô chọn (ghi "chưa có ảnh").
 - Ảnh lưu ở `client/data/images/<id camera>/<ngày>/`, gửi lên Server với trường `source` = id camera (xem ở trang chi tiết ảnh).
 
 Có thể ghi đè cấu hình bằng tham số dòng lệnh (chỉ định `--source-type` / `--source-url` → chỉ chạy đúng 1 nguồn đó):
@@ -181,14 +182,15 @@ iPhone / Camera IP ──Wi-Fi/LAN──┐
 | Method | Endpoint | Mô tả |
 |---|---|---|
 | POST | `/api/images` | Nhận ảnh (multipart: `file`, `capture_time`, `sent_time`, `width`, `height`, `client_id`, ...) |
-| GET | `/api/images?page=1&per_page=20&start=...&end=...&q=...` | Danh sách, phân trang, lọc theo thời gian / tên |
+| GET | `/api/images?page=1&per_page=20&camera=...&start=...&end=...&q=...` | Danh sách, phân trang, lọc theo camera (`source`) / thời gian / tên |
 | GET | `/api/images/<id>` | Chi tiết ảnh |
 | DELETE | `/api/images/<id>` | Xóa ảnh |
-| GET | `/api/config` | Client lấy cấu hình mới nhất |
+| GET | `/api/config?client_id=...&cameras=youtube,nha` | Client lấy cấu hình mới nhất, đồng thời báo các camera nó khai báo |
 | POST | `/api/config` | Thiết lập `capture_interval`, `jpeg_quality`, `resize_width`, `max_images` |
 | GET | `/api/config/history` | Lịch sử thay đổi cấu hình |
 | GET | `/api/stats?limit=100` | Thống kê độ trễ và chu kỳ chụp thực tế |
 | GET | `/api/clients` | Client đang kết nối (IP, lần cuối hoạt động) |
+| GET | `/api/cameras` | Các camera (đã gửi ảnh hoặc Client khai báo): `id`, `image_count`, `last_capture`, `clients` — dùng cho ô chọn camera trên Website |
 
 ## Kiểm thử
 

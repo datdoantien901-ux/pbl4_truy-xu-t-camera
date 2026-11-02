@@ -136,18 +136,22 @@ def init_db():
             last_activity VARCHAR(50)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ''')
+    # Danh sách id camera Client khai báo (vd 'youtube,nha') → Website biết cả camera chưa gửi ảnh
+    _add_column(cur, 'clients', 'cameras', 'VARCHAR(500)')
     conn.commit()
     conn.close()
     log.info('MySQL sẵn sàng: %s@%s:%s/%s', MYSQL_CONFIG['user'], MYSQL_CONFIG['host'],
              MYSQL_CONFIG['port'], MYSQL_CONFIG['database'])
 
 
-def touch_client(cur, client_id, activity):
-    """Ghi nhận Client vừa hoạt động (IP, thời điểm) — dùng trong request upload / lấy config."""
+def touch_client(cur, client_id, activity, cameras=None):
+    """Ghi nhận Client vừa hoạt động (IP, thời điểm) — dùng trong request upload / lấy config.
+    cameras: chuỗi id camera Client khai báo ('youtube,nha'); None → giữ giá trị cũ."""
     if not client_id:
         return
     cur.execute('''
-        INSERT INTO clients (client_id, ip, last_seen, last_activity) VALUES (%s, %s, %s, %s)
+        INSERT INTO clients (client_id, ip, last_seen, last_activity, cameras) VALUES (%s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE ip = VALUES(ip), last_seen = VALUES(last_seen),
-                                last_activity = VALUES(last_activity)
-    ''', (client_id, request.remote_addr, now_dt(), activity))
+                                last_activity = VALUES(last_activity),
+                                cameras = COALESCE(VALUES(cameras), cameras)
+    ''', (client_id, request.remote_addr, now_dt(), activity, cameras))

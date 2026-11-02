@@ -55,5 +55,6 @@ CREATE TABLE IF NOT EXISTS clients (
     client_id     VARCHAR(100) PRIMARY KEY,
     ip            VARCHAR(45),
     last_seen     DATETIME(3),
-    last_activity VARCHAR(50)
+    last_activity VARCHAR(50),
+    cameras       VARCHAR(500)          -- id camera Client khai báo, vd 'youtube,nha'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

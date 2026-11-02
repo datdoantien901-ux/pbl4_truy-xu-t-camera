@@ -4,11 +4,13 @@
 <div class="page-head">
   <div>
     <h1>Quản lý ảnh</h1>
-    <p>Tìm ảnh theo khoảng thời gian chụp, tên file hoặc tên Client, xem chi tiết và xóa ảnh không cần.</p>
+    <p>Tìm ảnh theo camera, khoảng thời gian chụp, tên file hoặc tên Client, xem chi tiết và xóa ảnh không cần.</p>
   </div>
 </div>
 
 <form id="filter" class="panel filter">
+  <label class="field"><span>Camera</span>
+    <select name="camera" id="camera"><option value="">Tất cả camera</option></select></label>
   <label class="field"><span>Chụp từ</span><input type="datetime-local" name="start" step="1"></label>
   <label class="field"><span>Đến</span><input type="datetime-local" name="end" step="1"></label>
   <label class="field"><span>Tên file hoặc Client</span><input type="text" name="q" placeholder="Ví dụ: client-01"></label>
@@ -25,7 +27,7 @@
   <table class="data">
     <thead>
       <tr><th><input type="checkbox" id="all" aria-label="Chọn tất cả"></th><th>Ảnh</th><th>Số</th><th>Chụp lúc</th>
-          <th>Client</th><th class="num">Dung lượng</th><th class="num">Độ phân giải</th><th></th></tr>
+          <th>Camera</th><th>Client</th><th class="num">Dung lượng</th><th class="num">Độ phân giải</th><th></th></tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
@@ -41,7 +43,7 @@ const form = document.getElementById('filter');
 function query() {
   const fd = new FormData(form);
   const p = new URLSearchParams({page, per_page: PER_PAGE});
-  for (const k of ['start', 'end', 'q']) if (fd.get(k)) p.set(k, fd.get(k));
+  for (const k of ['camera', 'start', 'end', 'q']) if (fd.get(k)) p.set(k, fd.get(k));
   return p;
 }
 
@@ -52,7 +54,7 @@ async function load(p = 1) {
   const tbody = document.getElementById('rows');
   tbody.replaceChildren();
   if (!data.items.length)
-    tbody.append(el('tr', {}, el('td', {colspan: 8},
+    tbody.append(el('tr', {}, el('td', {colspan: 9},
       el('div', {class: 'empty'}, el('strong', {}, 'Không có ảnh phù hợp'), 'Thử nới rộng khoảng thời gian hoặc xóa bộ lọc.'))));
 
   for (const it of data.items) {
@@ -63,6 +65,7 @@ async function load(p = 1) {
         el('img', {src: '/' + it.file_path, class: 'mini', alt: `Ảnh #${it.id}`, loading: 'lazy'}))),
       el('td', {}, '#' + it.id),
       el('td', {}, fmtTime(it.capture_time)),
+      el('td', {}, it.source || '—'),
       el('td', {}, it.client_id || '—'),
       el('td', {class: 'num'}, it.file_size_kb + ' KB'),
       el('td', {class: 'num'}, it.width && it.height ? `${it.width} × ${it.height}` : '—'),
@@ -97,13 +100,16 @@ async function del(ids) {
   load(page);
 }
 
+const camSelect = document.getElementById('camera');
+camSelect.onchange = () => { cameraToUrl(camSelect.value); load(1); };   // đổi camera → lọc ngay
+
 form.addEventListener('submit', (e) => { e.preventDefault(); load(1); });
-document.getElementById('reset').onclick = () => { form.reset(); load(1); };
+document.getElementById('reset').onclick = () => { form.reset(); camSelect.value = ''; cameraToUrl(''); load(1); };
 document.getElementById('all').onchange = (e) => {
   document.querySelectorAll('.pick').forEach(c => c.checked = e.target.checked);
   updateBtn();
 };
 document.getElementById('delSelected').onclick = () => del(picked());
-load(1);
+fillCameraSelect(camSelect, cameraFromUrl()).then(() => load(1));   // điền ô chọn xong mới lọc
 </script>
 {% endblock %}

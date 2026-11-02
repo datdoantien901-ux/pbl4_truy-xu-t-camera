@@ -2,6 +2,7 @@
 API giám sát / kiểm thử:
     GET    /api/stats                  thống kê độ trễ, chu kỳ chụp thực tế
     GET    /api/clients                các Client đang kết nối (IP, lần cuối thấy)
+    GET    /api/cameras                các camera: đã gửi ảnh (cột source) + Client khai báo
 """
 import statistics
 from datetime import datetime
@@ -29,6 +30,33 @@ def list_clients():
         item['seconds_ago'] = round((now - seen).total_seconds(), 1) if seen else None
         item['online'] = item['seconds_ago'] is not None and item['seconds_ago'] < 30
         result.append(item)
+    return jsonify(result)
+
+
+@monitor_bp.route('/api/cameras', methods=['GET'])
+def list_cameras():
+    """Danh sách camera cho ô chọn trên Website. Thứ tự: camera Client khai báo (đúng thứ tự cấu hình),
+    sau đó camera chỉ còn ảnh cũ (vd Client đã bỏ camera đó khỏi cấu hình)."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('''SELECT source, COUNT(*) AS n, MAX(capture_time) AS last_capture FROM images
+                   WHERE source IS NOT NULL AND source <> '' GROUP BY source''')
+    stats = {r['source']: r for r in cur.fetchall()}
+    cur.execute("SELECT client_id, cameras FROM clients WHERE cameras IS NOT NULL AND cameras <> '' "
+                'ORDER BY client_id')
+    declared = {}
+    for r in cur.fetchall():
+        for cam in r['cameras'].split(','):
+            declared.setdefault(cam, []).append(r['client_id'])
+    conn.close()
+
+    result = []
+    for cam in list(declared) + sorted(set(stats) - set(declared)):
+        s = stats.get(cam)
+        result.append({'id': cam,
+                       'image_count': s['n'] if s else 0,
+                       'last_capture': iso(s['last_capture']) if s else None,
+                       'clients': declared.get(cam, [])})
     return jsonify(result)
 
 

@@ -20,4 +20,5 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-02 | `feature/web-camera-filter` | Tính năng | `GET /api/images?camera=<id>` lọc theo cột `source` | routes/images.py |
 | 2026-11-02 | `refactor/server-images` · `dcfa5db` | Tái cấu trúc | Tách API ảnh ra `routes/images.py` (Blueprint `images`), xử lý file ra `storage.py` | routes/images.py, storage.py, Server.py |

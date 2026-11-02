@@ -24,5 +24,6 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-02 | `feature/web-camera-filter` | Tính năng | `load_cameras()` trả về thêm danh sách id camera khai báo (để ConfigThread báo cho Server) | settings.py, Client.py |
 | 2026-11-02 | `feature/client-multi-camera` | Tính năng | Nhiều camera: mảng `cameras` + `load_cameras()` (id hợp lệ, `enabled`, `url_env`, bỏ qua camera chưa có link); đọc `client/.env`; `Client.py` tạo 1 CaptureThread/camera, preview đổi camera bằng 1/2/Tab, `--view`. Sửa copy nông `DEFAULT_SETTINGS` (dùng `deepcopy`) | settings.py, Client.py, client_config.json, .env.example |
 | 2026-11-02 | `refactor/client-core` · `9739676` | Tái cấu trúc | Tách đọc cấu hình, log ra `settings.py`; `SharedConfig` ra `shared_config.py` | Client.py, settings.py, shared_config.py |

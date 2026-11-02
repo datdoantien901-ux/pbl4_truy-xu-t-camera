@@ -112,7 +112,8 @@ def load_settings(args):
 
 
 def load_cameras(settings):
-    """Danh sách camera sẽ chạy, mỗi phần tử: {'id', 'name', 'source': {type, url, rtsp_transport}}.
+    """Trả về (camera sẽ chạy, id mọi camera đang bật trong cấu hình — kể cả camera chưa có URL).
+    Mỗi camera sẽ chạy: {'id', 'name', 'source': {type, url, rtsp_transport}}.
 
     Mỗi camera trong client_config.json:
         id       tên ngắn (chữ, số, - _), dùng làm tên luồng, thư mục ảnh, trường "source" gửi lên Server
@@ -127,15 +128,15 @@ def load_cameras(settings):
         src = settings['source']
         cams = [{'id': src['type'], 'name': src['type'], 'source': src}]
 
-    result, seen = [], set()
+    result, declared = [], []
     for i, cam in enumerate(cams, 1):
         cam_id = re.sub(r'[^A-Za-z0-9_-]', '-', str(cam.get('id') or f'cam{i}'))
         if not cam.get('enabled', True):
             log.info('Camera "%s" đang tắt (enabled=false) → bỏ qua', cam_id)
             continue
-        if cam_id in seen:
+        if cam_id in declared:
             raise ValueError(f'Trùng id camera "{cam_id}" trong cấu hình')
-        seen.add(cam_id)
+        declared.append(cam_id)
 
         src = dict(cam.get('source') or {})
         env = cam.get('url_env')
@@ -147,4 +148,4 @@ def load_cameras(settings):
             continue
         src.setdefault('rtsp_transport', 'tcp')
         result.append({'id': cam_id, 'name': cam.get('name') or cam_id, 'source': src})
-    return result
+    return result, declared

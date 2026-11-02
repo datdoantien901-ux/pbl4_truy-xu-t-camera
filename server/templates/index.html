@@ -6,7 +6,11 @@
     <h1>Ảnh trực tiếp</h1>
     <p>Ảnh mới từ Client hiện lên tự động. Bấm vào một ảnh để xem chi tiết.</p>
   </div>
-  <label class="toggle"><input type="checkbox" id="live" checked> Tự cập nhật mỗi 2 giây</label>
+  <div class="head-controls">
+    <label class="field"><span>Camera</span>
+      <select id="camera"><option value="">Tất cả camera</option></select></label>
+    <label class="toggle"><input type="checkbox" id="live" checked> Tự cập nhật mỗi 2 giây</label>
+  </div>
 </div>
 
 <section class="panel latest" id="latest" aria-live="polite">
@@ -24,6 +28,7 @@ const PER_PAGE = 24;
 const REFRESH_MS = 2000;   // chu kỳ làm mới (ảnh hưởng trực tiếp tới độ trễ chụp → hiển thị)
 let page = 1;
 let lastSignature = null;
+let camera = cameraFromUrl();   // '' = tất cả camera
 
 function markDisplayed(img, it) {
   // Ảnh hiện lên màn hình lần đầu → báo server để đo độ trễ chụp → hiển thị
@@ -40,8 +45,11 @@ function renderLatest(it) {
   const info = box.querySelector('.latest-info');
   frame.querySelector('img')?.remove();
   if (!it) {
-    info.replaceChildren(el('div', {class: 'empty'}, el('strong', {}, 'Chưa có ảnh nào'),
-      'Chạy Client để bắt đầu gửi ảnh lên server.'));
+    info.replaceChildren(camera
+      ? el('div', {class: 'empty'}, el('strong', {}, `Camera "${camera}" chưa có ảnh`),
+          'Kiểm tra link camera trong client/.env và Client đang chạy.')
+      : el('div', {class: 'empty'}, el('strong', {}, 'Chưa có ảnh nào'),
+          'Chạy Client để bắt đầu gửi ảnh lên server.'));
     return;
   }
   const img = el('img', {src: '/' + it.file_path, alt: `Ảnh #${it.id} chụp lúc ${fmtTime(it.capture_time)}`});
@@ -54,6 +62,7 @@ function renderLatest(it) {
       el('div', {class: 'latest-date'}, day(it.capture_time))),
     el('dl', {class: 'facts'},
       el('dt', {}, 'Ảnh số'), el('dd', {}, '#' + it.id),
+      el('dt', {}, 'Camera'), el('dd', {}, it.source || '—'),
       el('dt', {}, 'Client'), el('dd', {}, it.client_id || '—'),
       el('dt', {}, 'Chụp → nhận'), el('dd', {}, fmtSec(latency(it.capture_time, it.received_time))),
       el('dt', {}, 'Độ phân giải'), el('dd', {}, it.width && it.height ? `${it.width} × ${it.height}` : '—'),
@@ -63,15 +72,18 @@ function renderLatest(it) {
 
 async function loadGallery(p) {
   page = p;
-  const data = await (await fetch(`/api/images?page=${p}&per_page=${PER_PAGE}`)).json();
-  const signature = p + ':' + data.items.map(i => i.id).join(',');
+  const q = new URLSearchParams({page: p, per_page: PER_PAGE});
+  if (camera) q.set('camera', camera);
+  const data = await (await fetch('/api/images?' + q)).json();
+  const signature = camera + ':' + p + ':' + data.items.map(i => i.id).join(',');
   if (signature === lastSignature) return;   // không có ảnh mới → không vẽ lại
   lastSignature = signature;
 
   if (p === 1) renderLatest(data.items[0]);
   const items = p === 1 ? data.items.slice(1) : data.items;
+  const of = camera ? ` của camera ${camera}` : '';
   document.getElementById('recentTitle').textContent =
-    data.total ? `Ảnh gần đây (${data.total} ảnh trên server)` : 'Ảnh gần đây';
+    data.total ? `Ảnh gần đây${of} (${data.total} ảnh trên server)` : `Ảnh gần đây${of}`;
 
   const g = document.getElementById('gallery');
   g.replaceChildren(...items.map(it => {
@@ -99,6 +111,16 @@ live.onchange = () => {
   tag.textContent = live.checked ? 'Đang cập nhật' : 'Đã tạm dừng';
   tag.classList.toggle('paused', !live.checked);
 };
+const camSelect = document.getElementById('camera');
+camSelect.onchange = () => {
+  camera = camSelect.value;
+  cameraToUrl(camera);
+  lastSignature = null;
+  loadGallery(1);
+};
+fillCameraSelect(camSelect, camera);
+setInterval(() => fillCameraSelect(camSelect, camera), 10000);   // camera mới gửi ảnh → hiện trong ô chọn
+
 loadGallery(1);
 setInterval(() => { if (live.checked && page === 1) loadGallery(1); }, REFRESH_MS);
 </script>
