@@ -1,5 +1,6 @@
 import os
-import sqlite3
+import pymysql
+import pymysql.cursors
 import uuid
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template, send_from_directory, abort
@@ -8,7 +9,15 @@ from flask_cors import CORS
 # ============ CẤU HÌNH ============
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
-DB_PATH = os.path.join(BASE_DIR, 'server.db')
+
+# --- MySQL: đổi trực tiếp ở đây hoặc đặt biến môi trường ---
+MYSQL_CONFIG = {
+    'host':     os.getenv('MYSQL_HOST', 'localhost'),
+    'port':     int(os.getenv('MYSQL_PORT', 3306)),
+    'user':     os.getenv('MYSQL_USER', 'root'),
+    'password': os.getenv('MYSQL_PASSWORD', ''),
+    'database': os.getenv('MYSQL_DATABASE', 'pbl4_camera'),
+}
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -20,56 +29,77 @@ CORS(app)
 
 # ============ DATABASE ============
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Mở kết nối MySQL. Mỗi dòng trả về là dict (giống sqlite3.Row cũ)."""
+    return pymysql.connect(
+        host=MYSQL_CONFIG['host'],
+        port=MYSQL_CONFIG['port'],
+        user=MYSQL_CONFIG['user'],
+        password=MYSQL_CONFIG['password'],
+        database=MYSQL_CONFIG['database'],
+        charset='utf8mb4',
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+
+
+def to_json(row):
+    """Đổi các cột DATETIME sang chuỗi ISO (vd 2026-10-13T10:02:31) để giữ đúng định dạng cũ."""
+    if row is None:
+        return None
+    return {k: (v.isoformat(timespec='seconds') if isinstance(v, datetime) else v)
+            for k, v in row.items()}
 
 
 def init_db():
+    # 1. Tạo database nếu chưa có
+    conn = pymysql.connect(host=MYSQL_CONFIG['host'], port=MYSQL_CONFIG['port'],
+                           user=MYSQL_CONFIG['user'], password=MYSQL_CONFIG['password'],
+                           charset='utf8mb4')
+    with conn.cursor() as cur:
+        cur.execute(f"CREATE DATABASE IF NOT EXISTS `{MYSQL_CONFIG['database']}` "
+                    "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+    conn.close()
+
+    # 2. Tạo bảng
     conn = get_db()
     cur = conn.cursor()
 
     cur.execute('''
         CREATE TABLE IF NOT EXISTS images (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_name     TEXT    NOT NULL,
-            file_path     TEXT    NOT NULL,
-            capture_time  TEXT,
-            received_time TEXT    NOT NULL,
-            file_size_kb  REAL,
-            width         INTEGER,
-            height        INTEGER
-        )
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            file_name     VARCHAR(255) NOT NULL,
+            file_path     VARCHAR(500) NOT NULL,
+            capture_time  DATETIME NULL,
+            received_time DATETIME NOT NULL,
+            file_size_kb  DOUBLE,
+            width         INT,
+            height        INT,
+            INDEX idx_capture_time (capture_time)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ''')
 
     cur.execute('''
         CREATE TABLE IF NOT EXISTS config (
-            id               INTEGER PRIMARY KEY CHECK (id = 1),
-            capture_interval INTEGER DEFAULT 5,
-            jpeg_quality     INTEGER DEFAULT 80,
-            resize_width     INTEGER DEFAULT 854,
-            max_images       INTEGER DEFAULT 100,
-            updated_at       TEXT
-        )
+            id               INT PRIMARY KEY,
+            capture_interval INT DEFAULT 5,
+            jpeg_quality     INT DEFAULT 80,
+            resize_width     INT DEFAULT 854,
+            max_images       INT DEFAULT 100,
+            updated_at       DATETIME,
+            CHECK (id = 1)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ''')
-
-    # Tự động thêm cột max_images nếu DB cũ chưa có
-    try:
-        cur.execute('ALTER TABLE config ADD COLUMN max_images INTEGER DEFAULT 100')
-        print('+ Da them cot max_images vao bang config')
-    except sqlite3.OperationalError:
-        pass  # Cột đã tồn tại
 
     # Chỉ có 1 dòng config
     cur.execute('''
-        INSERT OR IGNORE INTO config
+        INSERT IGNORE INTO config
             (id, capture_interval, jpeg_quality, resize_width, max_images, updated_at)
-        VALUES (1, 5, 80, 854, 100, ?)
-    ''', (datetime.now().isoformat(timespec='seconds'),))
+        VALUES (1, 5, 80, 854, 100, %s)
+    ''', (datetime.now().replace(microsecond=0),))
 
     conn.commit()
     conn.close()
-    print(f'✅ Database sẵn sàng: {DB_PATH}')
+    print(f"✅ MySQL sẵn sàng: {MYSQL_CONFIG['user']}@{MYSQL_CONFIG['host']}:"
+          f"{MYSQL_CONFIG['port']}/{MYSQL_CONFIG['database']}")
 
 
 # ============ DỌN DẸP ẢNH CŨ ============
@@ -89,8 +119,8 @@ def cleanup_old_images():
         conn.close()
         return
 
-    cur.execute('SELECT COUNT(*) FROM images')
-    total = cur.fetchone()[0]
+    cur.execute('SELECT COUNT(*) AS n FROM images')
+    total = cur.fetchone()['n']
 
     if total <= max_images:
         conn.close()
@@ -102,7 +132,7 @@ def cleanup_old_images():
     cur.execute('''
         SELECT id, file_path FROM images
         ORDER BY id ASC
-        LIMIT ?
+        LIMIT %s
     ''', (excess,))
     rows = cur.fetchall()
 
@@ -113,7 +143,7 @@ def cleanup_old_images():
                 os.remove(abs_path)
             except Exception as e:
                 print(f'[CLEANUP] Loi xoa file {abs_path}: {e}')
-        cur.execute('DELETE FROM images WHERE id = ?', (r['id'],))
+        cur.execute('DELETE FROM images WHERE id = %s', (r['id'],))
 
     conn.commit()
     conn.close()
@@ -142,7 +172,7 @@ def upload_image():
         return jsonify({'error': 'Chỉ nhận .jpg / .jpeg / .png'}), 400
 
     # 3. Đọc metadata client gửi kèm
-    capture_time = request.form.get('capture_time', datetime.now().isoformat(timespec='seconds'))
+    capture_time = request.form.get('capture_time') or datetime.now().isoformat(timespec='seconds')
     width = request.form.get('width', type=int)
     height = request.form.get('height', type=int)
 
@@ -159,7 +189,7 @@ def upload_image():
     cur = conn.cursor()
     cur.execute('''
         INSERT INTO images (file_name, file_path, capture_time, received_time, file_size_kb, width, height)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
     ''', (unique_name, f'uploads/{unique_name}', capture_time, received_time,
           file_size_kb, width, height))
     image_id = cur.lastrowid
@@ -187,26 +217,26 @@ def list_images():
 
     where, params = [], []
     if start:
-        where.append('capture_time >= ?')
+        where.append('capture_time >= %s')
         params.append(start)
     if end:
-        where.append('capture_time <= ?')
+        where.append('capture_time <= %s')
         params.append(end)
     where_sql = ('WHERE ' + ' AND '.join(where)) if where else ''
 
     conn = get_db()
     cur = conn.cursor()
 
-    cur.execute(f'SELECT COUNT(*) FROM images {where_sql}', params)
-    total = cur.fetchone()[0]
+    cur.execute(f'SELECT COUNT(*) AS n FROM images {where_sql}', params)
+    total = cur.fetchone()['n']
 
     offset = (page - 1) * per_page
     cur.execute(f'''
         SELECT * FROM images {where_sql}
         ORDER BY id DESC
-        LIMIT ? OFFSET ?
+        LIMIT %s OFFSET %s
     ''', params + [per_page, offset])
-    items = [dict(r) for r in cur.fetchall()]
+    items = [to_json(r) for r in cur.fetchall()]
     conn.close()
 
     return jsonify({
@@ -222,19 +252,19 @@ def list_images():
 def get_image(image_id):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute('SELECT * FROM images WHERE id = ?', (image_id,))
+    cur.execute('SELECT * FROM images WHERE id = %s', (image_id,))
     row = cur.fetchone()
     conn.close()
     if row is None:
         return jsonify({'error': 'Không tìm thấy ảnh'}), 404
-    return jsonify(dict(row))
+    return jsonify(to_json(row))
 
 
 @app.route('/api/images/<int:image_id>', methods=['DELETE'])
 def delete_image(image_id):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute('SELECT file_path FROM images WHERE id = ?', (image_id,))
+    cur.execute('SELECT file_path FROM images WHERE id = %s', (image_id,))
     row = cur.fetchone()
     if row is None:
         conn.close()
@@ -244,7 +274,7 @@ def delete_image(image_id):
     if os.path.exists(abs_path):
         os.remove(abs_path)
 
-    cur.execute('DELETE FROM images WHERE id = ?', (image_id,))
+    cur.execute('DELETE FROM images WHERE id = %s', (image_id,))
     conn.commit()
     conn.close()
     return jsonify({'message': 'Đã xóa', 'id': image_id})
@@ -256,7 +286,7 @@ def get_config():
     conn = get_db()
     cur = conn.cursor()
     cur.execute('SELECT * FROM config WHERE id = 1')
-    row = dict(cur.fetchone())
+    row = to_json(cur.fetchone())
     conn.close()
     return jsonify(row)
 
@@ -284,16 +314,16 @@ def update_config():
     if not fields:
         return jsonify({'error': 'Không có field hợp lệ nào'}), 400
 
-    fields['updated_at'] = datetime.now().isoformat(timespec='seconds')
-    set_clause = ', '.join(f'{k} = ?' for k in fields)
+    fields['updated_at'] = datetime.now().replace(microsecond=0)
+    set_clause = ', '.join(f'{k} = %s' for k in fields)
     params = list(fields.values()) + [1]
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute(f'UPDATE config SET {set_clause} WHERE id = ?', params)
+    cur.execute(f'UPDATE config SET {set_clause} WHERE id = %s', params)
     conn.commit()
     cur.execute('SELECT * FROM config WHERE id = 1')
-    row = dict(cur.fetchone())
+    row = to_json(cur.fetchone())
     conn.close()
 
     # Nếu vừa giảm max_images → dọn ngay
@@ -318,12 +348,12 @@ def page_config():
 def page_detail(image_id):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute('SELECT * FROM images WHERE id = ?', (image_id,))
+    cur.execute('SELECT * FROM images WHERE id = %s', (image_id,))
     row = cur.fetchone()
     conn.close()
     if row is None:
         abort(404)
-    return render_template('detail.html', image=dict(row))
+    return render_template('detail.html', image=to_json(row))
 
 
 # ============ MAIN ============
