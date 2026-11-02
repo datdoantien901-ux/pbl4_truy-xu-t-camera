@@ -14,6 +14,15 @@ Kiến trúc (mô hình Producer – Consumer):
     └──────────────┘
     Main thread: hiện preview (cv2.imshow phải chạy ở luồng chính) và chờ tín hiệu dừng.
 
+Mỗi chức năng nằm ở một file riêng (file này chỉ khởi động và nối các luồng):
+    settings.py         đường dẫn, cấu hình mặc định, đọc cấu hình, log
+    shared_config.py    SharedConfig: tham số chụp dùng chung giữa các luồng (có Lock)
+    capture_thread.py   CaptureThread: đọc frame, chụp, nén JPEG, lưu file + SQLite
+    upload_thread.py    UploadThread: gửi ảnh lên Server, retry, gửi bù
+    config_thread.py    ConfigThread: lấy cấu hình từ Server định kỳ
+    video_source.py     VideoSource: mở nguồn RTSP / HTTP / webcam / file / YouTube
+    local_store.py      LocalStore: SQLite local (metadata + hàng đợi gửi bù)
+
 Ctrl+C (SIGINT) → set stop_event → các luồng tự thoát vòng lặp → join → giải phóng tài nguyên.
 
 Chạy:  python Client.py                       (dùng client_config.json)
@@ -28,9 +37,9 @@ import signal
 import threading
 
 import cv2
-import requests
 
 from capture_thread import CaptureThread
+from config_thread import ConfigThread
 from local_store import LocalStore
 from settings import DB_PATH, IMAGE_DIR, load_settings, setup_logging
 from shared_config import SharedConfig
@@ -38,31 +47,6 @@ from upload_thread import UploadThread
 from video_source import VideoSource
 
 log = logging.getLogger('client')
-
-
-# ===================== LUỒNG CONFIG =====================
-class ConfigThread(threading.Thread):
-    def __init__(self, settings, shared_cfg, stop_event):
-        super().__init__(name='ConfigThread', daemon=True)
-        self.url = settings['server_url'] + '/api/config'
-        self.client_id = settings['client_id']
-        self.period = settings['config_poll_interval']
-        self.cfg = shared_cfg
-        self.stop_event = stop_event
-
-    def run(self):
-        while not self.stop_event.is_set():
-            try:
-                r = requests.get(self.url, params={'client_id': self.client_id}, timeout=3)
-                r.raise_for_status()
-                old = self.cfg.update(r.json())
-                if old is not None:
-                    # Log này là minh chứng cho kiểm thử "điều khiển từ xa"
-                    log.info('[CONFIG] Áp dụng cấu hình mới từ server: %s → %s', old, self.cfg.get())
-            except Exception as e:
-                log.debug('Không lấy được config: %s', e)
-            self.stop_event.wait(self.period)
-        log.info('ConfigThread dừng')
 
 
 # ===================== MAIN =====================
