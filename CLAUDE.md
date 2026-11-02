@@ -22,7 +22,8 @@ cd client; pip install -r requirements.txt      # opencv-python, requests, yt-dl
 
 # Server (máy này: MySQL80 chạy ở cổng 3307, KHÔNG phải 3306)
 cd server
-$env:MYSQL_PORT=3307; $env:MYSQL_PASSWORD="<hỏi người dùng>"; python Server.py
+python Server.py      # đọc MYSQL_PORT / MYSQL_PASSWORD... từ server/.env (không commit; mẫu: .env.example)
+# Biến môi trường đặt trong terminal được ưu tiên hơn .env
 # Biến khác: MYSQL_HOST, MYSQL_USER (root), MYSQL_DATABASE (pbl4_camera), PBL4_HOST, PBL4_PORT (5000), PBL4_DEBUG=1
 
 # Chuyển dữ liệu cũ SQLite (server/server.db) → MySQL, chạy lại không bị trùng

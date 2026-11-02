@@ -95,7 +95,7 @@ cd server
 python Server.py
 ```
 
-- Server kết nối MySQL theo biến môi trường `MYSQL_HOST` (mặc định `localhost`), `MYSQL_PORT` (`3306`), `MYSQL_USER` (`root`), `MYSQL_PASSWORD` (rỗng), `MYSQL_DATABASE` (`pbl4_camera`). Database và các bảng tự tạo khi chạy lần đầu. Ví dụ trên PowerShell: `$env:MYSQL_PASSWORD="matkhau"; python Server.py`.
+- Server kết nối MySQL theo biến môi trường `MYSQL_HOST` (mặc định `localhost`), `MYSQL_PORT` (`3306`), `MYSQL_USER` (`root`), `MYSQL_PASSWORD` (rỗng), `MYSQL_DATABASE` (`pbl4_camera`). Database và các bảng tự tạo khi chạy lần đầu. Để khỏi gõ lại mỗi lần chạy: chép `server/.env.example` thành `server/.env` rồi điền cổng, mật khẩu (file `.env` không được commit). Hoặc đặt tạm trong PowerShell: `$env:MYSQL_PASSWORD="matkhau"; python Server.py` — biến đặt trong terminal được ưu tiên hơn `.env`.
 - Có dữ liệu cũ trong `server.db` (SQLite)? Chạy một lần `python migrate_sqlite_to_mysql.py` để chép sang MySQL.
 
 - Mặc định server lắng nghe `0.0.0.0:5000`, nên máy khác trong mạng LAN truy cập được qua `http://<IP-máy-server>:5000`.
