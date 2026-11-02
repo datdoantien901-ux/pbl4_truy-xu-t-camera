@@ -1,7 +1,11 @@
 # CLAUDE.md
 
 Hướng dẫn cho Claude Code (và các AI agent khác) khi làm việc trong repo này.
-**Đọc thêm [PROGRESS.md](PROGRESS.md)** để biết tiến trình hiện tại, việc đang dở và các lỗi còn tồn tại. Cập nhật PROGRESS.md ở cuối mỗi phiên làm việc.
+**Đọc thêm [PROGRESS.md](PROGRESS.md)** để biết tiến trình hiện tại, việc đang dở. Cập nhật PROGRESS.md ở cuối mỗi phiên làm việc.
+
+**Nhật ký theo chức năng — [docs/chuc-nang/](docs/chuc-nang/README.md)**: mỗi chức năng một file `<mã>.md` (file code thuộc chức năng, lỗi tồn tại, nhật ký thay đổi).
+- Trước khi sửa: đọc file `.md` của chức năng đó (lỗi đã biết, lần sửa trước).
+- **Sau mỗi lần sửa code, tự cập nhật** file `.md` tương ứng theo "Quy tắc cập nhật" trong [docs/chuc-nang/README.md](docs/chuc-nang/README.md) và commit cùng với code — không cần người dùng nhắc.
 
 ## Dự án
 
@@ -74,6 +78,6 @@ Mỗi chức năng một file — sửa lỗi chức năng nào thì vào đúng
 ## Git
 
 - Nhánh chính `main`; nhánh làm việc hiện tại `feature/multithread-client`. Remote: `origin`.
-- Mỗi chức năng làm trên một nhánh riêng tách từ `feature/multithread-client`, xong thì `git merge --no-ff` về: `refactor/<phần>` khi tái cấu trúc, `fix/<chức-năng>` khi sửa lỗi, `feature/<tên>` khi thêm tính năng. Tên chức năng theo file: `server-core`, `server-images`, `server-config`, `server-monitor`, `server-web`, `client-core`, `client-capture`, `client-upload`, `client-config`.
+- Mỗi chức năng làm trên một nhánh riêng tách từ `feature/multithread-client`, xong thì `git merge --no-ff` về: `refactor/<phần>` khi tái cấu trúc, `fix/<chức-năng>` khi sửa lỗi, `feature/<tên>` khi thêm tính năng. Tên chức năng theo file: `server-core`, `server-images`, `server-config`, `server-monitor`, `server-web`, `client-core`, `client-source`, `client-store`, `client-capture`, `client-upload`, `client-config` (danh sách đầy đủ: [docs/chuc-nang/](docs/chuc-nang/README.md)).
 - Commit message viết tiếng Việt, ngắn gọn (xem `git log`).
 - Không commit dữ liệu chạy thử: ảnh, `*.db`, log (xem `.gitignore`).

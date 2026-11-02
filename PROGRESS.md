@@ -12,6 +12,8 @@
 | 10/2026 | `ac2fa0a` | Làm lại giao diện web; nguồn YouTube dùng luồng trực tiếp kênh 0511 |
 | 11/2026 | `d574d5e` (trên `main`) | Chuyển Server từ SQLite sang MySQL, thêm `schema.sql`, `migrate_sqlite_to_mysql.py` |
 | 2026-11-02 | `5d924da` merge `main` → `feature/multithread-client` | Gỡ xung đột: giữ toàn bộ tính năng nhánh đa luồng + chạy hoàn toàn trên MySQL, `DATETIME(3)`, schema/migrate đủ 4 bảng. Bỏ `server/server.db` khỏi git, `.gitignore` thêm `*.db`, `server/uploads/`. Thêm CLAUDE.md, AGENTS.md, PROGRESS.md |
+| 2026-11-02 | `feature/server-env` | Server đọc cấu hình MySQL từ `server/.env` (không commit), khỏi gõ lại cổng/mật khẩu |
+| 2026-11-02 | `docs/nhat-ky-chuc-nang` | Tạo `docs/chuc-nang/*.md`: nhật ký + lỗi tồn tại theo từng chức năng; chuyển danh sách lỗi Server/Client từ PROGRESS.md sang đó |
 | 2026-11-02 | 9 nhánh `refactor/*` + `docs/cau-truc-module`, merge `--no-ff` vào `feature/multithread-client` | Tách code theo chức năng, không đổi hành vi. Server: `settings`, `timeutil`, `db`, `storage`, `routes/{images,config,monitor,web}` (Blueprint). Client: `settings`, `shared_config`, `capture_thread`, `upload_thread`, `config_thread`. `migrate_sqlite_to_mysql.py` import trực tiếp `db`/`settings`/`timeutil` |
 
 ### Đã kiểm thử (2026-11-02, MySQL 8.0.46 cổng 3307, Python 3.13)
@@ -35,19 +37,11 @@
 
 ### Repo
 - **File rác đang được git track** (~309 ảnh + DB từ phiên bản đầu): `timestamp/`, `images/`, `client/timestamp/`, `camera_metadata.db`, `client/camera_metadata.db`. Code hiện tại không dùng các file này (client mới lưu ở `client/data/`). Nên `git rm --cached` và bổ sung `.gitignore` (cần hỏi người dùng trước).
-- `.gitignore` có `client/client_config.local.json` nhưng `Client.py` **không đọc** file này (chỉ đọc `--config` hoặc `client_config.json`) → hoặc thêm hỗ trợ, hoặc bỏ dòng đó.
 - Chưa có test tự động trong repo.
 
-### Server
-- `ON DUPLICATE KEY UPDATE ... VALUES(col)` trong `touch_client()` bị MySQL ≥ 8.0.20 đánh dấu deprecated (vẫn chạy, chỉ là warning). Có thể đổi sang cú pháp alias `AS new` khi cần.
-- Không có xác thực: ai trong LAN cũng gọi được `DELETE /api/images/<id>` và `POST /api/config`.
-- `cleanup_old_images()` chạy đồng bộ sau mỗi lần upload (thêm 1 kết nối DB / request).
-- Mặc định `MYSQL_PORT=3306`; máy phát triển hiện tại dùng **3307** → nhớ đặt biến môi trường.
-
-### Client
-- `DEFAULT_SETTINGS` trong `Client.py` có URL YouTube khác với `client_config.json` (link `watch?v=` của luồng live có thể hết hạn → cần cập nhật khi lỗi mở nguồn).
-- Nguồn YouTube phụ thuộc `yt-dlp`, dễ hỏng khi YouTube đổi API → `pip install -U yt-dlp`.
+### Theo chức năng
+Lỗi của từng chức năng (Server / Client) ghi trong **[docs/chuc-nang/](docs/chuc-nang/README.md)** — mỗi chức năng một file, kèm nhật ký sửa đổi. Không ghi trùng ở đây.
 
 ## Ghi chú môi trường (máy phát triển)
-- Windows 11, Python 3.13, MySQL80 service tại `D:\MySQL\PBL4`, cổng 3307, user `root` (mật khẩu: hỏi người dùng, **không ghi vào repo**).
+- Windows 11, Python 3.13, MySQL80 service tại `D:\MySQL\PBL4`, cổng 3307 (đã ghi trong `server/.env`), user `root` (mật khẩu: hỏi người dùng, **không ghi vào repo**).
 - Database: `pbl4_camera`.
