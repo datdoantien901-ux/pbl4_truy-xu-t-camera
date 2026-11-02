@@ -40,19 +40,23 @@ Chưa có bộ test tự động trong repo. Kiểm thử bằng cách chạy Se
 
 ## Kiến trúc chính
 
+Mỗi chức năng một file — sửa lỗi chức năng nào thì vào đúng file đó (bảng "Cấu trúc thư mục" trong README.md).
+
 ### Client (`client/`)
-- `Client.py`: 3 luồng + luồng chính
-  - `CaptureThread` (producer): đọc frame, lưu file ảnh **atomic** (ghi file tạm → `os.replace`), ghi `LocalStore`, đẩy id vào `queue.Queue` có giới hạn.
-  - `UploadThread` (consumer): gửi multipart lên `POST /api/images`, retry; định kỳ quét ảnh `pending` trong DB để **gửi bù** khi mất mạng.
-  - `ConfigThread`: mỗi `config_poll_interval` giây gọi `GET /api/config?client_id=...`, cập nhật `SharedConfig` (có `threading.Lock`).
+- `Client.py`: chỉ khởi động — đọc tham số, tạo 3 luồng + luồng chính (preview), dừng khi có tín hiệu.
+  - `capture_thread.py` — `CaptureThread` (producer): đọc frame, lưu file ảnh **atomic** (ghi file tạm → `os.replace`), ghi `LocalStore`, đẩy id vào `queue.Queue` có giới hạn.
+  - `upload_thread.py` — `UploadThread` (consumer): gửi multipart lên `POST /api/images`, retry; định kỳ quét ảnh `pending` trong DB để **gửi bù** khi mất mạng.
+  - `config_thread.py` — `ConfigThread`: mỗi `config_poll_interval` giây gọi `GET /api/config?client_id=...`, cập nhật `SharedConfig` (`shared_config.py`, có `threading.Lock`).
   - Dừng bằng `threading.Event` khi nhận SIGINT/SIGTERM.
-  - Thứ tự ưu tiên cấu hình: `DEFAULT_SETTINGS` < `client_config.json` < biến môi trường `CAMERA_URL` < tham số dòng lệnh.
+  - `settings.py`: đường dẫn, `DEFAULT_SETTINGS`, `load_settings()`, log. Thứ tự ưu tiên cấu hình: `DEFAULT_SETTINGS` < `client_config.json` < biến môi trường `CAMERA_URL` < tham số dòng lệnh.
 - `video_source.py`: lớp `VideoSource` (OpenCV; YouTube được phân giải URL bằng yt-dlp; RTSP ép TCP).
 - `local_store.py`: SQLite WAL `client/data/client.db`, vừa là kho metadata vừa là hàng đợi gửi bù. Mỗi thao tác mở connection riêng (không chia sẻ giữa luồng).
 
-### Server (`server/Server.py`)
+### Server (`server/`)
+- `Server.py` chỉ tạo Flask app và đăng ký 4 Blueprint: `routes/images.py` (`/api/images…`, `/uploads/…`), `routes/config.py` (`/api/config…`), `routes/monitor.py` (`/api/stats`, `/api/clients`), `routes/web.py` (các trang HTML).
+- Module dùng chung: `settings.py` (đường dẫn, `MYSQL_CONFIG`, `CONFIG_LIMITS`, `log`), `timeutil.py` (thời gian), `db.py` (`get_db`, `init_db`, `to_json`, `touch_client`), `storage.py` (`cleanup_old_images`, `remove_file`, `looks_like_image`). Import kiểu tuyệt đối (`from db import get_db`) — chạy từ thư mục `server/`.
 - Mỗi request mở **một kết nối MySQL riêng** (`get_db()`, `DictCursor`) → an toàn với `threaded=True`.
-- `init_db()` chạy khi import module: tạo database, tạo bảng, **tự thêm cột thiếu / nâng `DATETIME` → `DATETIME(3)`** cho DB cũ (qua `information_schema`). Đổi schema thì sửa cả `init_db()`, `schema.sql` và `migrate_sqlite_to_mysql.py`.
+- `init_db()` (trong `db.py`) được `Server.py` gọi khi import: tạo database, tạo bảng, **tự thêm cột thiếu / nâng `DATETIME` → `DATETIME(3)`** cho DB cũ (qua `information_schema`). Đổi schema thì sửa cả `init_db()`, `schema.sql` và `migrate_sqlite_to_mysql.py`.
 - Bảng: `images`, `config` (đúng 1 dòng id=1), `config_history`, `clients`.
 - Chống nhận trùng: cùng `(client_id, client_capture_id, capture_time)` → trả lại bản ghi cũ với `duplicate: true`.
 - `cleanup_old_images()` xóa ảnh cũ nhất khi vượt `config.max_images`.
@@ -69,5 +73,6 @@ Chưa có bộ test tự động trong repo. Kiểm thử bằng cách chạy Se
 ## Git
 
 - Nhánh chính `main`; nhánh làm việc hiện tại `feature/multithread-client`. Remote: `origin`.
+- Mỗi chức năng làm trên một nhánh riêng tách từ `feature/multithread-client`, xong thì `git merge --no-ff` về: `refactor/<phần>` khi tái cấu trúc, `fix/<chức-năng>` khi sửa lỗi, `feature/<tên>` khi thêm tính năng. Tên chức năng theo file: `server-core`, `server-images`, `server-config`, `server-monitor`, `server-web`, `client-core`, `client-capture`, `client-upload`, `client-config`.
 - Commit message viết tiếng Việt, ngắn gọn (xem `git log`).
 - Không commit dữ liệu chạy thử: ảnh, `*.db`, log (xem `.gitignore`).

@@ -12,6 +12,7 @@
 | 10/2026 | `ac2fa0a` | Làm lại giao diện web; nguồn YouTube dùng luồng trực tiếp kênh 0511 |
 | 11/2026 | `d574d5e` (trên `main`) | Chuyển Server từ SQLite sang MySQL, thêm `schema.sql`, `migrate_sqlite_to_mysql.py` |
 | 2026-11-02 | `5d924da` merge `main` → `feature/multithread-client` | Gỡ xung đột: giữ toàn bộ tính năng nhánh đa luồng + chạy hoàn toàn trên MySQL, `DATETIME(3)`, schema/migrate đủ 4 bảng. Bỏ `server/server.db` khỏi git, `.gitignore` thêm `*.db`, `server/uploads/`. Thêm CLAUDE.md, AGENTS.md, PROGRESS.md |
+| 2026-11-02 | 9 nhánh `refactor/*` + `docs/cau-truc-module`, merge `--no-ff` vào `feature/multithread-client` | Tách code theo chức năng, không đổi hành vi. Server: `settings`, `timeutil`, `db`, `storage`, `routes/{images,config,monitor,web}` (Blueprint). Client: `settings`, `shared_config`, `capture_thread`, `upload_thread`, `config_thread`. `migrate_sqlite_to_mysql.py` import trực tiếp `db`/`settings`/`timeutil` |
 
 ### Đã kiểm thử (2026-11-02, MySQL 8.0.46 cổng 3307, Python 3.13)
 - `pip install -r server/requirements.txt` trong venv mới: OK.
@@ -19,9 +20,14 @@
 - 21/21 kiểm thử API qua HTTP đạt: upload, chống trùng, file không hợp lệ (400), lọc/phân trang, chi tiết, displayed, xóa, config GET/POST + validate, history, stats, clients, 5 trang web.
 - Chưa chạy thử Client thật kết nối Server MySQL (end-to-end).
 
+### Đã kiểm thử sau khi tách module (2026-11-02, KHÔNG có MySQL thật — thiếu mật khẩu)
+- Server (MySQL giả lập bằng mock): 17/17 route giống hệt bản trước khi tách; 11 smoke check (lỗi 400 của upload/config, 4 trang web, static) đạt ở cả bản cũ và mới; pyflakes sạch.
+- Client (video mẫu + server Flask giả): chụp 7 ảnh / 14s, gửi đủ 7, nhận cấu hình mới từ server — giống bản cũ; kịch bản tắt server rồi bật lại → gửi bù đủ.
+- **Cần chạy lại 21 kiểm thử API với MySQL thật** sau đợt tách module.
+
 ## Đang dở — làm tiếp ở phiên sau
 
-1. Chạy end-to-end: Server (MySQL) + Client, kiểm tra gallery, trang Thống kê, kịch bản tắt server rồi bật lại.
+1. Chạy Server với MySQL thật sau khi tách module (xem mục kiểm thử ở trên), rồi chạy end-to-end: Server (MySQL) + Client, kiểm tra gallery, trang Thống kê, kịch bản tắt server rồi bật lại.
 2. Tạo PR `feature/multithread-client` → `main`.
 3. Hỏi người dùng có dọn file rác đang track không (xem mục Repo bên dưới).
 
