@@ -103,7 +103,7 @@ def main():
 
     setup_logging()
     settings = load_settings(args)
-    cameras = load_cameras(settings)
+    cameras, declared_ids = load_cameras(settings)
     if not cameras:
         log.error('Không có camera nào có URL → kiểm tra "cameras" trong client_config.json và client/.env')
         return 1
@@ -136,7 +136,7 @@ def main():
     if hasattr(signal, 'SIGTERM'):
         signal.signal(signal.SIGTERM, on_signal)
 
-    threads = capture_threads + [ConfigThread(settings, shared_cfg, stop_event)]
+    threads = capture_threads + [ConfigThread(settings, shared_cfg, stop_event, declared_ids)]
     if settings['upload_enabled']:
         threads.append(UploadThread(settings, store, upload_q, enqueued, stop_event))
     for t in threads:

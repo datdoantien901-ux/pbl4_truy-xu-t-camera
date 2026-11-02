@@ -20,4 +20,5 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-02 | `feature/web-camera-filter` | Tính năng | Ô chọn camera ở *Ảnh trực tiếp* (khung hình lớn + danh sách) và *Quản lý ảnh* (lọc + cột Camera); lựa chọn lưu trên URL `?camera=`; hàm dùng chung `fillCameraSelect` trong `_layout.html` | templates/index.html, templates/manage.html, templates/_layout.html, static/style.css |
 | 2026-11-02 | `refactor/server-web` · `53038c5` | Tái cấu trúc | Tách các trang web ra `routes/web.py` (Blueprint `web`); Server.py chỉ còn khởi động app | routes/web.py, Server.py |

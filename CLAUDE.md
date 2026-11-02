@@ -58,11 +58,11 @@ Mỗi chức năng một file — sửa lỗi chức năng nào thì vào đúng
 - `local_store.py`: SQLite WAL `client/data/client.db`, vừa là kho metadata vừa là hàng đợi gửi bù. Mỗi thao tác mở connection riêng (không chia sẻ giữa luồng).
 
 ### Server (`server/`)
-- `Server.py` chỉ tạo Flask app và đăng ký 4 Blueprint: `routes/images.py` (`/api/images…`, `/uploads/…`), `routes/config.py` (`/api/config…`), `routes/monitor.py` (`/api/stats`, `/api/clients`), `routes/web.py` (các trang HTML).
+- `Server.py` chỉ tạo Flask app và đăng ký 4 Blueprint: `routes/images.py` (`/api/images…`, `/uploads/…`), `routes/config.py` (`/api/config…`), `routes/monitor.py` (`/api/stats`, `/api/clients`, `/api/cameras`), `routes/web.py` (các trang HTML).
 - Module dùng chung: `settings.py` (đường dẫn, `MYSQL_CONFIG`, `CONFIG_LIMITS`, `log`), `timeutil.py` (thời gian), `db.py` (`get_db`, `init_db`, `to_json`, `touch_client`), `storage.py` (`cleanup_old_images`, `remove_file`, `looks_like_image`). Import kiểu tuyệt đối (`from db import get_db`) — chạy từ thư mục `server/`.
 - Mỗi request mở **một kết nối MySQL riêng** (`get_db()`, `DictCursor`) → an toàn với `threaded=True`.
 - `init_db()` (trong `db.py`) được `Server.py` gọi khi import: tạo database, tạo bảng, **tự thêm cột thiếu / nâng `DATETIME` → `DATETIME(3)`** cho DB cũ (qua `information_schema`). Đổi schema thì sửa cả `init_db()`, `schema.sql` và `migrate_sqlite_to_mysql.py`.
-- Bảng: `images`, `config` (đúng 1 dòng id=1), `config_history`, `clients`.
+- Bảng: `images`, `config` (đúng 1 dòng id=1), `config_history`, `clients`. Camera = cột `images.source` (id camera do Client gửi); `clients.cameras` = danh sách id camera Client khai báo (gửi qua `GET /api/config?cameras=`), `/api/cameras` gộp cả hai cho ô chọn camera trên Website.
 - Chống nhận trùng: cùng `(client_id, client_capture_id, capture_time)` → trả lại bản ghi cũ với `duplicate: true`.
 - `cleanup_old_images()` xóa ảnh cũ nhất khi vượt `config.max_images`.
 - Giới hạn tham số cấu hình nằm ở `CONFIG_LIMITS`.

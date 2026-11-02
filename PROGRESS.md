@@ -12,6 +12,7 @@
 | 10/2026 | `ac2fa0a` | Làm lại giao diện web; nguồn YouTube dùng luồng trực tiếp kênh 0511 |
 | 11/2026 | `d574d5e` (trên `main`) | Chuyển Server từ SQLite sang MySQL, thêm `schema.sql`, `migrate_sqlite_to_mysql.py` |
 | 2026-11-02 | `5d924da` merge `main` → `feature/multithread-client` | Gỡ xung đột: giữ toàn bộ tính năng nhánh đa luồng + chạy hoàn toàn trên MySQL, `DATETIME(3)`, schema/migrate đủ 4 bảng. Bỏ `server/server.db` khỏi git, `.gitignore` thêm `*.db`, `server/uploads/`. Thêm CLAUDE.md, AGENTS.md, PROGRESS.md |
+| 2026-11-02 | `feature/web-camera-filter` | Website: ô chọn camera ở *Ảnh trực tiếp* và *Quản lý ảnh*; `/api/images?camera=`, `/api/cameras`; cột `clients.cameras` (Client báo camera khai báo qua `/api/config`). Đã test với MySQL thật (cổng phụ 5055) + chụp màn hình Chrome headless, dọn dữ liệu thử |
 | 2026-11-02 | `feature/client-multi-camera` | Client chạy nhiều camera cùng lúc (YouTube + camera nhà), mỗi camera 1 luồng chụp; preview đổi camera bằng phím 1/2/Tab, `--view`; link camera trong `client/.env`. Server: `actual_gap` tính theo từng camera. Camera nhà chưa có link thật (người dùng chưa biết loại camera) |
 | 2026-11-02 | `feature/server-env` | Server đọc cấu hình MySQL từ `server/.env` (không commit), khỏi gõ lại cổng/mật khẩu |
 | 2026-11-02 | `docs/nhat-ky-chuc-nang` | Tạo `docs/chuc-nang/*.md`: nhật ký + lỗi tồn tại theo từng chức năng; chuyển danh sách lỗi Server/Client từ PROGRESS.md sang đó |

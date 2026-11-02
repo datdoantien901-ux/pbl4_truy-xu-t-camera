@@ -4,6 +4,8 @@ API cấu hình từ xa:
     POST   /api/config                 Website thiết lập tham số (giới hạn trong CONFIG_LIMITS)
     GET    /api/config/history         lịch sử thay đổi cấu hình
 """
+import re
+
 from flask import Blueprint, jsonify, request
 
 from db import get_db, to_json, touch_client
@@ -14,13 +16,21 @@ from timeutil import now_dt
 config_bp = Blueprint('config', __name__)
 
 
+def _camera_list(raw):
+    """'youtube, nha' → 'youtube,nha' (chỉ giữ id hợp lệ); không gửi → None (giữ giá trị cũ trong DB)."""
+    if raw is None:
+        return None
+    ids = [c for c in (x.strip() for x in raw.split(',')) if re.fullmatch(r'[A-Za-z0-9_-]{1,50}', c)]
+    return ','.join(dict.fromkeys(ids))[:500]
+
+
 @config_bp.route('/api/config', methods=['GET'])
 def get_config():
     conn = get_db()
     cur = conn.cursor()
     cur.execute('SELECT * FROM config WHERE id = 1')
     row = to_json(cur.fetchone())
-    touch_client(cur, request.args.get('client_id'), 'config_poll')
+    touch_client(cur, request.args.get('client_id'), 'config_poll', _camera_list(request.args.get('cameras')))
     conn.commit()
     conn.close()
     return jsonify(row)

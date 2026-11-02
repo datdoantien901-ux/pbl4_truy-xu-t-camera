@@ -25,5 +25,6 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-02 | `feature/web-camera-filter` | Tính năng | Thêm cột `clients.cameras` (tự thêm cho DB cũ); `touch_client(..., cameras)` cập nhật danh sách camera, `None` → giữ giá trị cũ | db.py, schema.sql |
 | 2026-11-02 | `feature/server-env` · `c1d5abe` | Tính năng | Đọc cấu hình MySQL từ `server/.env` (biến terminal được ưu tiên), thêm `.env.example` | settings.py, .env.example |
 | 2026-11-02 | `refactor/server-core` · `bab2948` | Tái cấu trúc | Tách cấu hình, thời gian, CSDL khỏi Server.py thành `settings.py`, `timeutil.py`, `db.py`; migrate import trực tiếp các module này | Server.py, settings.py, timeutil.py, db.py, migrate_sqlite_to_mysql.py |

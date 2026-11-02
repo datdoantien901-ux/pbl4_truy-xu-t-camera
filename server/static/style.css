@@ -110,6 +110,7 @@ code { font-size: .9em; background: var(--sign-tint); padding: .1em .35em; borde
 .btn-danger:hover:not(:disabled) { background: var(--danger-tint); border-color: var(--danger); color: var(--danger); }
 .btn svg { width: 16px; height: 16px; }
 
+.head-controls { display: flex; align-items: flex-end; gap: 1.25rem; flex-wrap: wrap; }
 .toggle { display: inline-flex; align-items: center; gap: .5rem; font-size: .9rem; color: var(--ink-soft); cursor: pointer; user-select: none; }
 .toggle input { width: 16px; height: 16px; accent-color: var(--sign); }
 
