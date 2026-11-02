@@ -49,7 +49,7 @@ def stats():
       capture_to_received : chụp ở Client → Server nhận xong
       sent_to_received    : Client bắt đầu gửi → Server nhận xong (thời gian truyền qua mạng)
       capture_to_display  : chụp → ảnh hiện trên Website
-      actual_gap          : khoảng cách thực tế giữa 2 lần chụp (so với interval_used)
+      actual_gap          : khoảng cách thực tế giữa 2 lần chụp của cùng 1 camera (so với interval_used)
     Lưu ý: Client và Server ở 2 máy khác nhau phải đồng bộ đồng hồ (NTP) thì số liệu mới đúng.
     """
     limit = min(max(2, request.args.get('limit', 100, type=int)), 1000)
@@ -63,15 +63,18 @@ def stats():
 
     rows.reverse()  # cũ → mới để tính khoảng cách giữa các lần chụp
     items = []
-    prev_capture = None
-    prev_client = None
+    # 1 Client có thể chạy nhiều camera (cột source = id camera) → tính khoảng cách theo từng camera
+    last_capture = {}
     for r in rows:
         gap = None
-        if prev_capture and r.get('client_id') and r.get('client_id') == prev_client:
-            gap = seconds_between(prev_capture, r['capture_time'])
+        key = (r.get('client_id'), r.get('source'))
+        if r.get('client_id') and key in last_capture:
+            gap = seconds_between(last_capture[key], r['capture_time'])
+        last_capture[key] = r['capture_time']
         items.append({
             'id': r['id'],
             'client_id': r.get('client_id'),
+            'source': r.get('source'),
             'capture_time': iso(r['capture_time']),
             'interval_used': r.get('interval_used'),
             'actual_gap': gap,
@@ -80,7 +83,6 @@ def stats():
             'capture_to_display': seconds_between(r['capture_time'], r.get('displayed_time')),
             'file_size_kb': r['file_size_kb'],
         })
-        prev_capture, prev_client = r['capture_time'], r.get('client_id')
     items.reverse()
 
     return jsonify({

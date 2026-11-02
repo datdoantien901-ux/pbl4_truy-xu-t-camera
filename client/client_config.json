@@ -1,11 +1,26 @@
 {
   "client_id": "client-01",
 
-  "source": {
-    "type": "youtube",
-    "url": "https://www.youtube.com/watch?v=sJvEFrG0wq0",
-    "rtsp_transport": "tcp"
-  },
+  "cameras": [
+    {
+      "id": "youtube",
+      "name": "YouTube - kenh 0511",
+      "source": {
+        "type": "youtube",
+        "url": "https://www.youtube.com/watch?v=sJvEFrG0wq0"
+      }
+    },
+    {
+      "id": "nha",
+      "name": "Camera nha",
+      "url_env": "CAMERA_NHA_URL",
+      "source": {
+        "type": "rtsp",
+        "url": "",
+        "rtsp_transport": "tcp"
+      }
+    }
+  ],
 
   "server_url": "http://127.0.0.1:5000",
 
