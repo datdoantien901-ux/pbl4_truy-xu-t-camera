@@ -21,3 +21,8 @@ client/client_config.local.json
 # Server dùng MySQL; server.db chỉ còn là dữ liệu cũ để migrate. Ảnh server nhận về không commit
 *.db
 server/uploads/
+
+# Dữ liệu của phiên bản đầu (client cũ), code hiện tại không dùng
+/timestamp/
+/images/
+client/timestamp/

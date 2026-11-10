@@ -1,7 +1,7 @@
 # Tiến trình dự án
 
 > Cập nhật file này ở cuối mỗi phiên làm việc: ghi việc đã xong, việc đang dở, lỗi mới phát hiện.
-> Cập nhật lần cuối: **2026-11-02**
+> Cập nhật lần cuối: **2026-11-10**
 
 ## Đã hoàn thành
 
@@ -17,6 +17,8 @@
 | 2026-11-02 | `feature/client-multi-camera` | Client chạy nhiều camera cùng lúc (YouTube + camera nhà), mỗi camera 1 luồng chụp; preview đổi camera bằng phím 1/2/Tab, `--view`; link camera trong `client/.env`. Server: `actual_gap` tính theo từng camera. Camera nhà chưa có link thật (người dùng chưa biết loại camera) |
 | 2026-11-02 | `feature/server-env` | Server đọc cấu hình MySQL từ `server/.env` (không commit), khỏi gõ lại cổng/mật khẩu |
 | 2026-11-02 | `docs/nhat-ky-chuc-nang` | Tạo `docs/chuc-nang/*.md`: nhật ký + lỗi tồn tại theo từng chức năng; chuyển danh sách lỗi Server/Client từ PROGRESS.md sang đó |
+| 2026-11-10 | `refactor/don-repo` | Bỏ 311 file rác của phiên bản đầu khỏi git (`timestamp/`, `images/`, `client/timestamp/`, `camera_metadata.db`, `client/camera_metadata.db`) — vẫn giữ trên đĩa; thêm vào `.gitignore` |
+| 2026-11-10 | merge `feature/multithread-client` → `main` | Đưa toàn bộ nhánh đa luồng vào `main` (merge `--no-ff`) |
 | 2026-11-02 | 9 nhánh `refactor/*` + `docs/cau-truc-module`, merge `--no-ff` vào `feature/multithread-client` | Tách code theo chức năng, không đổi hành vi. Server: `settings`, `timeutil`, `db`, `storage`, `routes/{images,config,monitor,web}` (Blueprint). Client: `settings`, `shared_config`, `capture_thread`, `upload_thread`, `config_thread`. `migrate_sqlite_to_mysql.py` import trực tiếp `db`/`settings`/`timeutil` |
 
 ### Đã kiểm thử (2026-11-02, MySQL 8.0.46 cổng 3307, Python 3.13)
@@ -62,14 +64,13 @@ Theo thứ tự ưu tiên để tăng % đáp ứng đề tài:
 1. **Camera thật (bước 1–3, 7):** xác định loại camera nhà → điền `CAMERA_NHA_URL` trong `client/.env`. Không có camera IP → dùng điện thoại (IP Webcam / OctoStream) làm camera. Chụp minh chứng: sơ đồ LAN, IP camera trên router, ONVIF Device Manager / nmap, VLC mở được RTSP.
 2. **ONVIF (bước 2):** thêm công cụ nhỏ dò camera + lấy RTSP URI qua ONVIF (vd thư viện `onvif-zeep`, WS-Discovery) — hoặc tối thiểu minh chứng bằng ONVIF Device Manager.
 3. **Báo cáo kiểm thử (bước 7–8):** chạy kịch bản có ghi lại — E2E, đổi interval 5s → 2s trên Website (ảnh log Client + `config_history`), tắt/bật Server (gửi bù), đo độ trễ khi mở sẵn trang gallery; chụp màn hình các trang. Đặt trong `docs/bao-cao/`.
-4. Tạo PR `feature/multithread-client` → `main`.
-5. (Nâng cao, nếu còn thời gian) phát hiện chuyển động bằng OpenCV (frame differencing) — dễ nhất trong 3 mục nâng cao.
-6. Hỏi người dùng có dọn file rác đang track không (xem mục Repo bên dưới).
+4. (Nâng cao, nếu còn thời gian) phát hiện chuyển động bằng OpenCV (frame differencing) — dễ nhất trong 3 mục nâng cao.
+5. Chạy lại bộ 21 kiểm thử API với MySQL thật (sau khi tách module mới test bằng mock).
 
 ## Lỗi / tồn tại đã biết
 
 ### Repo
-- **File rác đang được git track** (~309 ảnh + DB từ phiên bản đầu): `timestamp/`, `images/`, `client/timestamp/`, `camera_metadata.db`, `client/camera_metadata.db`. Code hiện tại không dùng các file này (client mới lưu ở `client/data/`). Nên `git rm --cached` và bổ sung `.gitignore` (cần hỏi người dùng trước).
+- ~~File rác đang được git track~~ (đã dọn 2026-11-10, `refactor/don-repo`). File cũ vẫn còn trên đĩa, có thể xóa tay nếu không cần.
 - Chưa có test tự động trong repo.
 
 ### Theo chức năng
