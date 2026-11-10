@@ -1,260 +1,188 @@
-import cv2
-import yt_dlp
-import time
+"""
+Client thu nhận ảnh từ Camera — phiên bản đa luồng.
+
+Kiến trúc (mô hình Producer – Consumer):
+
+    ┌──────────────┐  frame mới   ┌──────────────┐  id ảnh   ┌──────────────┐
+    │ CaptureThread│ ───────────▶ │  Lưu file +  │ ────────▶ │ UploadThread │ ──HTTP POST──▶ Server
+    │  (producer)  │  mỗi N giây  │ SQLite local │  Queue    │  (consumer)  │
+    └──────────────┘              └──────────────┘ (bounded) └──────────────┘
+           ▲                                                        │ lỗi mạng → backoff,
+           │ config dùng chung (Lock)                               │ ảnh nằm lại trong DB,
+    ┌──────────────┐                                                │ gửi bù khi có mạng
+    │ ConfigThread │ ──HTTP GET /api/config mỗi 10s──▶ Server       ▼
+    └──────────────┘
+    Nhiều camera (mảng "cameras" trong client_config.json) → mỗi camera một CaptureThread,
+    dùng chung Queue, UploadThread, ConfigThread.
+    Main thread: hiện preview của 1 camera (cv2.imshow phải chạy ở luồng chính), nhấn 1/2/.../Tab
+    để đổi camera đang xem; chờ tín hiệu dừng.
+
+Mỗi chức năng nằm ở một file riêng (file này chỉ khởi động và nối các luồng):
+    settings.py         đường dẫn, cấu hình mặc định, đọc cấu hình + client/.env, danh sách camera, log
+    shared_config.py    SharedConfig: tham số chụp dùng chung giữa các luồng (có Lock)
+    capture_thread.py   CaptureThread: đọc frame, chụp, nén JPEG, lưu file + SQLite
+    upload_thread.py    UploadThread: gửi ảnh lên Server, retry, gửi bù
+    config_thread.py    ConfigThread: lấy cấu hình từ Server định kỳ
+    video_source.py     VideoSource: mở nguồn RTSP / HTTP / webcam / file / YouTube
+    local_store.py      LocalStore: SQLite local (metadata + hàng đợi gửi bù)
+
+Ctrl+C (SIGINT) → set stop_event → các luồng tự thoát vòng lặp → join → giải phóng tài nguyên.
+
+Chạy:  python Client.py                       (dùng client_config.json, chạy mọi camera trong "cameras")
+       python Client.py --view nha             (mở cửa sổ xem camera "nha" trước; hoặc --view 2)
+       python Client.py --source-type rtsp --source-url rtsp://192.168.1.15:8554/live
+       python Client.py --server http://192.168.1.10:5000 --no-preview
+"""
+import argparse
+import logging
 import os
+import queue
 import signal
-import sqlite3
-import requests
-from datetime import datetime
+import sys
+import threading
 
-# ============ CẤU HÌNH ============
-YOUTUBE_URL    = 'https://www.youtube.com/watch?v=oC8ttZHG50I'
-SERVER_BASE    = 'http://127.0.0.1:5000'
-UPLOAD_URL     = f'{SERVER_BASE}/api/images'
-CONFIG_URL     = f'{SERVER_BASE}/api/config'
+import cv2
+import numpy as np
 
-SAVE_FOLDER    = 'timestamp'
-DB_NAME        = 'camera_metadata.db'
+from capture_thread import CaptureThread
+from config_thread import ConfigThread
+from local_store import LocalStore
+from settings import DB_PATH, IMAGE_DIR, load_cameras, load_settings, setup_logging
+from shared_config import SharedConfig
+from upload_thread import UploadThread
+from video_source import VideoSource
 
-DEFAULT_CONFIG = {
-    'capture_interval': 5,
-    'jpeg_quality': 80,
-    'resize_width': 854,
-}
-CONFIG_POLL_INTERVAL = 10
-#SHOW_PREVIEW     = False
-SHOW_PREVIEW = True  
-PREVIEW_FPS      = 5        # Preview chỉ vẽ 5 fps (không phải 30)
-UPLOAD_ENABLED   = True     # Bật upload lên server
+log = logging.getLogger('client')
 
-# ============ BIẾN TOÀN CỤC ============
-RUNNING = True   # Điều khiển vòng lặp, set False khi Ctrl+C
-
-def _handle_sigint(sig, frame):
-    global RUNNING
-    print("\n[EXIT] Nhan Ctrl+C. Dang thoat...")
-    RUNNING = False
-
-signal.signal(signal.SIGINT, _handle_sigint)
-
-# ============ KHỞI TẠO ============
-if not os.path.exists(SAVE_FOLDER):
-    os.makedirs(SAVE_FOLDER)
-    print(f"Da tao thu muc: {SAVE_FOLDER}/")
+PREVIEW_W, PREVIEW_H = 640, 360
+KEY_TAB = 9
 
 
-def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS CameraLogs (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_name     TEXT,
-            file_path     TEXT,
-            capture_time  DATETIME,
-            file_size_kb  REAL,
-            uploaded      INTEGER DEFAULT 0,
-            server_id     INTEGER
-        )
-    ''')
-    conn.commit()
-    conn.close()
-    print("Database cuc bo san sang.")
+# ===================== CỬA SỔ XEM TRƯỚC =====================
+def pick_view(value, cameras):
+    """--view nhận số thứ tự (1, 2, ...) hoặc id camera; không khớp → camera đầu tiên."""
+    if value:
+        ids = [c['id'] for c in cameras]
+        if value in ids:
+            return ids.index(value)
+        if value.isdigit() and 1 <= int(value) <= len(cameras):
+            return int(value) - 1
+        log.warning('--view "%s" không khớp camera nào (%s) → xem camera 1', value, ', '.join(ids))
+    return 0
 
 
-def save_metadata(file_name, file_path, capture_time, size_kb, uploaded, server_id=None):
-    conn = sqlite3.connect(DB_NAME)
-    conn.execute('''
-        INSERT INTO CameraLogs (file_name, file_path, capture_time, file_size_kb, uploaded, server_id)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (file_name, file_path, capture_time, size_kb, int(uploaded), server_id))
-    conn.commit()
-    conn.close()
+def render_preview(cam_t, index, total):
+    """Ảnh mới nhất của camera đang xem + thanh nhãn. cv2.putText chỉ vẽ chữ ASCII → nhãn không dấu."""
+    frame = cam_t.latest_preview()
+    if frame is None:
+        img = np.zeros((PREVIEW_H, PREVIEW_W, 3), np.uint8)
+        msg = 'Dang tai hinh...' if cam_t.connected else 'Dang ket noi nguon video...'
+        cv2.putText(img, msg, (20, PREVIEW_H // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2)
+    else:
+        img = cv2.resize(frame, (PREVIEW_W, PREVIEW_H))
+    hint = f'Phim 1-{total} / Tab: doi luong   q: thoat' if total > 1 else 'q: thoat'
+    cv2.rectangle(img, (0, 0), (PREVIEW_W, 26), (0, 0, 0), -1)
+    cv2.putText(img, f'[{index + 1}/{total}] {cam_t.camera_id}', (8, 18),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(img, hint, (PREVIEW_W - 8 - 7 * len(hint), 18),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1, cv2.LINE_AA)
+    return img
 
 
-def fetch_config():
-    try:
-        r = requests.get(CONFIG_URL, timeout=3)
-        r.raise_for_status()
-        c = r.json()
-        return {
-            'capture_interval': int(c.get('capture_interval', DEFAULT_CONFIG['capture_interval'])),
-            'jpeg_quality':     int(c.get('jpeg_quality',     DEFAULT_CONFIG['jpeg_quality'])),
-            'resize_width':     int(c.get('resize_width',     DEFAULT_CONFIG['resize_width'])),
-        }
-    except Exception as e:
-        print(f"[WARN] Khong lay duoc config ({e}). Dung config hien tai.")
-        return None
-
-
-def get_live_stream_url(youtube_url):
-    ydl_opts = {
-        'format': 'best[height<=480]/best',   # Giảm xuống 480p cho nhẹ
-        'noplaylist': True,
-        'quiet': True,
-        'extractor_args': {'youtube': {'player_client': ['android', 'web']}}
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(youtube_url, download=False)
-        return info['url'] if 'url' in info else info.get('formats', [info])[-1]['url']
-
-
-def process_frame(frame, resize_width, jpeg_quality):
-    h, w = frame.shape[:2]
-    if resize_width and resize_width != w:
-        new_h = int(h * resize_width / w)
-        frame = cv2.resize(frame, (resize_width, new_h), interpolation=cv2.INTER_AREA)
-    ok, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
-    if not ok:
-        raise RuntimeError('JPEG encode that bai')
-    return frame, buf.tobytes()
-
-
-def upload_image(jpg_bytes, file_name, capture_time, width, height):
-    try:
-        files = {'file': (file_name, jpg_bytes, 'image/jpeg')}
-        data = {
-            'capture_time': capture_time,
-            'width':  str(width),
-            'height': str(height),
-        }
-        r = requests.post(UPLOAD_URL, files=files, data=data, timeout=10)
-        if r.status_code == 201:
-            return r.json().get('id')
-        print(f"[ERR] Server tra {r.status_code}: {r.text[:200]}")
-    except Exception as e:
-        print(f"[ERR] Upload loi: {e}")
-    return None
-
-
-def open_capture(stream_url):
-    """Mở stream với các tham số tối ưu cho HLS."""
-    cap = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
-    # Các tham số này giúp giảm buffer, giảm latency
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    # Timeout đọc (ms) — tránh blocking vô hạn
-    os.environ['OPENCV_FFMPEG_READ_ATTEMPTS'] = '3'
-    return cap
-
-
-# ============ MAIN ============
+# ===================== MAIN =====================
 def main():
-    global RUNNING
-    init_db()
+    parser = argparse.ArgumentParser(description='Client thu nhận ảnh từ Camera')
+    parser.add_argument('--config', help='Đường dẫn file cấu hình (mặc định client_config.json)')
+    parser.add_argument('--source-type', choices=['rtsp', 'http', 'webcam', 'file', 'youtube'],
+                        help='Chạy đúng 1 nguồn này (bỏ qua danh sách "cameras")')
+    parser.add_argument('--source-url', help='URL / chỉ số webcam / đường dẫn file')
+    parser.add_argument('--server', help='Địa chỉ server, vd http://192.168.1.10:5000')
+    parser.add_argument('--no-preview', action='store_true', help='Không mở cửa sổ xem trước')
+    parser.add_argument('--view', help='Camera hiện trong cửa sổ xem trước lúc mở: số thứ tự hoặc id')
+    args = parser.parse_args()
 
-    config = dict(DEFAULT_CONFIG)
-    last_config_poll = 0
-    last_preview_time = 0
+    setup_logging()
+    settings = load_settings(args)
+    cameras, declared_ids = load_cameras(settings)
+    if not cameras:
+        log.error('Không có camera nào có URL → kiểm tra "cameras" trong client_config.json và client/.env')
+        return 1
+    os.makedirs(IMAGE_DIR, exist_ok=True)
 
-    print("Dang boc tach luong YouTube...")
+    store = LocalStore(DB_PATH)
+    shared_cfg = SharedConfig(settings['capture'])
+    upload_q = queue.Queue(maxsize=settings['upload_queue_size'])
+    enqueued = (set(), threading.Lock())
+    stop_event = threading.Event()
+
+    capture_threads = []
+    for cam in cameras:
+        src = cam['source']
+        source = VideoSource(src['type'], src['url'], src.get('rtsp_transport', 'tcp'))
+        capture_threads.append(CaptureThread(cam, settings, source, store, shared_cfg,
+                                             upload_q, enqueued, stop_event))
+
+    log.info('=== Khởi động Client %s ===', settings['client_id'])
+    for i, t in enumerate(capture_threads, 1):
+        log.info('Camera %d: %s (%s) | %s', i, t.camera_id, t.camera_name, t.source.describe())
+    log.info('Server: %s | Cấu hình ban đầu: %s', settings['server_url'], shared_cfg.get())
+    log.info('Ảnh chờ gửi bù từ lần chạy trước: %d', store.count_pending())
+
+    def on_signal(sig, frame):
+        log.info('Nhận tín hiệu %s. Đang dừng các luồng...', signal.Signals(sig).name)
+        stop_event.set()
+
+    signal.signal(signal.SIGINT, on_signal)
+    if hasattr(signal, 'SIGTERM'):
+        signal.signal(signal.SIGTERM, on_signal)
+
+    threads = capture_threads + [ConfigThread(settings, shared_cfg, stop_event, declared_ids)]
+    if settings['upload_enabled']:
+        threads.append(UploadThread(settings, store, upload_q, enqueued, stop_event))
+    for t in threads:
+        t.start()
+
+    window = f"Client {settings['client_id']}"
+    current = pick_view(args.view, cameras)
+    total = len(capture_threads)
+    if settings['show_preview']:
+        capture_threads[current].set_preview_active(True)
+        log.info('Đang xem: %s (nhấn 1-%d hoặc Tab để đổi luồng)', capture_threads[current].camera_name, total)
     try:
-        stream_url = get_live_stream_url(YOUTUBE_URL)
-        print("Co luong. Khoi dong OpenCV...")
-    except Exception as e:
-        print(f"[ERR] Loi lay luong: {e}")
-        return
-
-    while RUNNING:
-        cap = open_capture(stream_url)
-        if not cap.isOpened():
-            print("Khong mo duoc luong. Thu lai sau 2s...")
-            time.sleep(2)
-            continue
-
-        print(f"Bat dau. Config: {config}")
-        last_capture = time.time()
-
-        while RUNNING:
-            # ---- 1. Đọc frame KHÔNG blocking quá lâu ----
-            # grab() chỉ lấy frame khỏi buffer (nhanh)
-            grabbed = cap.grab()
-
-            if not grabbed:
-                print("Mat luong. Ket noi lai...")
-                try:
-                    stream_url = get_live_stream_url(YOUTUBE_URL)
-                except Exception as e:
-                    print(f"   -> loi: {e}")
-                break
-
-            now = time.time()
-
-            # ---- 2. Polling config ----
-            if now - last_config_poll >= CONFIG_POLL_INTERVAL:
-                new_cfg = fetch_config()
-                if new_cfg and new_cfg != config:
-                    print(f"[POLL] Cap nhat config: {config} -> {new_cfg}")
-                    config = new_cfg
-                last_config_poll = now
-
-            # ---- 3. Đến chu kỳ chụp → retrieve frame + lưu + upload ----
-            if now - last_capture >= config['capture_interval']:
-                ret, frame = cap.retrieve()
-                if not ret:
-                    last_capture = now
-                    continue
-
-                dt = datetime.now()
-                ts_file = dt.strftime('%Y%m%d_%H%M%S')
-                ts_db   = dt.strftime('%Y-%m-%d %H:%M:%S')
-
-                file_name = f"cam_{ts_file}.jpg"
-                file_path = os.path.join(SAVE_FOLDER, file_name)
-
-                frame_out, jpg_bytes = process_frame(
-                    frame, config['resize_width'], config['jpeg_quality']
-                )
-                h_out, w_out = frame_out.shape[:2]
-
-                with open(file_path, 'wb') as f:
-                    f.write(jpg_bytes)
-                size_kb = round(len(jpg_bytes) / 1024, 2)
-
-                server_id = None
-                if UPLOAD_ENABLED:
-                    server_id = upload_image(jpg_bytes, file_name, ts_db, w_out, h_out)
-
-                save_metadata(file_name, file_path, ts_db, size_kb,
-                              uploaded=(server_id is not None),
-                              server_id=server_id)
-
-                tag = f"OK server_id={server_id}" if server_id else "chua upload"
-                print(f"[SAVE] {file_name} | {size_kb} KB | {w_out}x{h_out} | {tag}")
-
-                last_capture = now
-
-            # ---- 4. Preview giới hạn fps (nếu bật) ----
-            if SHOW_PREVIEW and (now - last_preview_time) >= (1.0 / PREVIEW_FPS):
-                ret, frame = cap.retrieve()
-                if ret:
-                    disp = cv2.resize(frame, (640, 360))  # nhỏ hơn cho nhẹ
-                    cv2.imshow("Client - Camera Da Nang", disp)
-                    key = cv2.waitKey(1) & 0xFF
-                    if key == ord('q'):
-                        print("Nhan q. Thoat...")
-                        RUNNING = False
-
-                # Kiểm tra user bấm X đóng cửa sổ chưa
-                try:
-                    if cv2.getWindowProperty("Client - Camera Da Nang",
-                                             cv2.WND_PROP_VISIBLE) < 1:
-                        print("Cua so da dong. Thoat...")
-                        RUNNING = False
-                except cv2.error:
-                    pass
-
-                last_preview_time = now
-
-        cap.release()
-
-    # Cleanup
-    cv2.destroyAllWindows()
-    print("[EXIT] Da giai phong tai nguyen.")
+        while not stop_event.is_set():
+            if settings['show_preview']:
+                cv2.imshow(window, render_preview(capture_threads[current], current, total))
+                key = cv2.waitKey(50) & 0xFF
+                if key == ord('q'):
+                    log.info('Nhấn q. Thoát...')
+                    stop_event.set()
+                elif key == KEY_TAB or ord('1') <= key < ord('1') + total:
+                    new = (current + 1) % total if key == KEY_TAB else key - ord('1')
+                    if new != current:
+                        capture_threads[current].set_preview_active(False)
+                        capture_threads[new].set_preview_active(True)
+                        current = new
+                        log.info('Đổi luồng xem → %s', capture_threads[current].camera_name)
+                else:
+                    try:
+                        if cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
+                            log.info('Cửa sổ đã đóng. Thoát...')
+                            stop_event.set()
+                    except cv2.error:
+                        pass
+            else:
+                stop_event.wait(0.5)
+    finally:
+        stop_event.set()
+        for t in threads:
+            t.join(timeout=15)
+        for t in capture_threads:
+            t.source.release()
+        if settings['show_preview']:
+            cv2.destroyAllWindows()
+        log.info('=== Client đã dừng. Ảnh chờ gửi bù: %d ===', store.count_pending())
+    return 0
 
 
 if __name__ == '__main__':
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n[EXIT] KeyboardInterrupt")
-    finally:
-        cv2.destroyAllWindows()
+    sys.exit(main())
