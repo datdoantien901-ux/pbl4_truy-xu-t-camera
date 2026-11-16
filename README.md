@@ -120,6 +120,8 @@ Sửa `client/client_config.json` (danh sách camera, địa chỉ server), rồ
 
 Chép `client/.env.example` thành `client/.env` và điền `PBL4_API_KEY` **trùng với Server**. Sai hoặc thiếu khóa thì Server trả `401`; Client ghi lỗi vào log và giữ ảnh lại để gửi bù khi sửa xong khóa.
 
+Cửa sổ xem trước chỉ để xem: **đóng cửa sổ thì Client vẫn tiếp tục chụp và gửi ảnh**; dừng Client bằng phím `q` trong cửa sổ hoặc Ctrl+C trong terminal.
+
 **Client chụp camera nào?** Mặc định (`"cameras_from_server": true` trong `client_config.json`) Client chụp **các camera trên Website được admin bật "Client chụp ảnh"**:
 - mục *Camera trực tiếp* → **chọn camera** (quản trị viên chọn camera nào thì Client chụp camera đó; camera đang chụp có nhãn *Client đang chụp*),
 - mục *Camera IP* → nút **Chụp ảnh** trên từng camera.
