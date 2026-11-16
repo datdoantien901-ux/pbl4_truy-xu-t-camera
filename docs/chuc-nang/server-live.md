@@ -21,6 +21,7 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-16 | `feature/client-chup-tu-web` | Tính năng | Cột `live_streams.capture`; `PATCH /api/streams/<id> {capture}` (admin); nút *Cho Client chụp ảnh* ở khung phát + nhãn *Client đang chụp* trong danh sách. Lần đầu nâng cấp bật sẵn camera cổng trường Nguyễn Huệ (camera Client chụp trước đây) | routes/streams.py, db.py, templates/live.html, static/style.css |
 | 2026-11-16 | `feature/gop-camera-anh` | Tính năng | Trang Camera trực tiếp có 2 tab: Video trực tiếp (YouTube) và Ảnh từ Client (gallery). Mã mỗi tab bọc trong hàm riêng (`videoTab`, `photoTab`) có `show`/`hide`; rời tab video → gỡ iframe để dừng phát; tab lưu trên URL `?tab=` | templates/live.html |
 | 2026-11-16 | `feature/camera-ip` | Tính năng | Đổi tên trang thành *Camera trực tiếp*, là trang mặc định sau khi vào; dẫn sang Camera IP | templates/live.html |
 | 2026-11-16 | `feature/phan-quyen` | Tính năng | Tạo chức năng: trang Camera YouTube (1 camera lớn + danh sách, hoặc lưới tối đa 6); admin thêm link / tìm livestream đang phát (yt-dlp, bộ lọc "Trực tiếp", kiểm tra cho nhúng song song 8 luồng) / xóa; nạp 10 camera mẫu đã kiểm tra (Đà Nẵng, Hà Nội, Nha Trang, Tokyo, Mỹ…). Đã test: link sai / trùng / chặn nhúng / bị gỡ đều báo lỗi đúng; tìm kiếm ~5 s; chụp màn hình Chrome headless | youtube.py, routes/streams.py, templates/live.html, db.py, static/style.css |

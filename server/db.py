@@ -178,11 +178,18 @@ def init_db():
             added_at  DATETIME(3) NOT NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ''')
+    # capture = 1 → Client chụp ảnh từ camera này (admin bật/tắt trên Website, Client nhận qua /api/config)
+    had_capture = 'capture' in _columns(cur, 'live_streams')
+    _add_column(cur, 'live_streams', 'capture', 'TINYINT NOT NULL DEFAULT 0')
+    _add_column(cur, 'ip_cameras', 'capture', 'TINYINT NOT NULL DEFAULT 0')
     if new_streams_table:   # chỉ nạp danh sách mẫu lần đầu (admin xóa hết thì không nạp lại)
         from youtube import DEFAULT_STREAMS
         cur.executemany('''INSERT IGNORE INTO live_streams (video_id, title, channel, added_by, added_at)
                            VALUES (%s, %s, %s, 'system', %s)''',
                         [(v, t, c, now_dt()) for v, t, c in DEFAULT_STREAMS])
+    if not had_capture:
+        # Lần đầu có cột capture: bật chụp camera Client vẫn chụp trước đây (cổng trường Nguyễn Huệ)
+        cur.execute("UPDATE live_streams SET capture = 1 WHERE video_id = 'sJvEFrG0wq0'")
     conn.commit()
     conn.close()
     log.info('MySQL sẵn sàng: %s@%s:%s/%s', MYSQL_CONFIG['user'], MYSQL_CONFIG['host'],

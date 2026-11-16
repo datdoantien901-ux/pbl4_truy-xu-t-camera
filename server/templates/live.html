@@ -27,6 +27,7 @@
     <div class="player-info">
       <div><h2 id="pTitle">—</h2><span class="muted" id="pChannel"></span> <span id="pStatus"></span></div>
       <div class="actions">
+        {% if is_admin %}<button class="btn" id="captureBtn" hidden></button>{% endif %}
         <button class="btn" id="checkBtn" disabled>Kiểm tra còn phát</button>
         <a class="btn" id="ytLink" target="_blank" rel="noopener noreferrer">Mở trên YouTube</a>
       </div>
@@ -138,7 +139,8 @@ function renderSingle() {
         onclick: () => select(s.video_id),
         onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(s.video_id); } }},
       el('img', {src: thumb(s.video_id), alt: '', loading: 'lazy'}),
-      el('span', {}, el('span', {class: 'stream-title'}, s.title), el('span', {class: 'stream-channel'}, s.channel || '')),
+      el('span', {}, el('span', {class: 'stream-title'}, s.title), el('span', {class: 'stream-channel'}, s.channel || ''),
+         s.capture ? el('span', {class: 'chip-capture', title: 'Client đang chụp ảnh từ camera này'}, 'Client đang chụp') : null),
       IS_ADMIN ? el('button', {class: 'icon-btn', title: 'Xóa khỏi danh sách', 'aria-label': 'Xóa ' + s.title,
                                onclick: e => { e.stopPropagation(); remove(s); }}, '✕') : el('span'))));
   }
@@ -161,6 +163,15 @@ function renderSingle() {
   }
   document.getElementById('pTitle').textContent = s.title;
   document.getElementById('pChannel').textContent = s.channel ? 'Kênh ' + s.channel : '';
+  const cb = document.getElementById('captureBtn');
+  if (cb) {   // admin: bật / tắt Client chụp ảnh từ camera đang xem
+    cb.hidden = false;
+    cb.className = 'btn' + (s.capture ? ' btn-capture-on' : '');
+    cb.textContent = s.capture ? 'Client đang chụp · Tắt' : 'Cho Client chụp ảnh';
+    cb.title = s.capture ? 'Client đang chụp ảnh camera này gửi lên Server (tab Ảnh từ Client). Bấm để dừng.'
+                         : 'Client sẽ chụp ảnh camera này theo chu kỳ và gửi lên Server (khoảng 10 giây sau khi bật).';
+    cb.onclick = () => setCapture(s, !s.capture);
+  }
   document.getElementById('ytLink').href = ytUrl(s.video_id);
 }
 
@@ -185,6 +196,14 @@ document.getElementById('checkBtn').onclick = async () => {
   try { box.replaceChildren(statusBadge(await (await fetch(`/api/streams/${s.id}/check`)).json())); }
   catch { box.replaceChildren(statusBadge({error: 'không kết nối được Server'})); }
 };
+
+async function setCapture(s, on) {
+  const r = await fetch(`/api/streams/${s.id}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'},
+                                                body: JSON.stringify({capture: on})});
+  if (!r.ok) { alert('Chưa đổi được (lỗi ' + r.status + ').'); return; }
+  s.capture = on ? 1 : 0;
+  render();
+}
 
 async function remove(s) {
   if (!confirm(`Xóa "${s.title}" khỏi danh sách?`)) return;
@@ -370,8 +389,9 @@ function renderSources() {
   const recent = c => c.last_capture && now - new Date(c.last_capture) < 30000;   // có ảnh trong 30 giây qua
   box.replaceChildren(
     sourceItem('', 'Tất cả camera', `Mọi nguồn · ${sources.length} camera`, newest?.last_image, sources.some(recent)),
-    ...sources.map(c => sourceItem(c.id, c.id,
-      c.image_count ? `${c.image_count} ảnh · lúc ${clock(c.last_capture)}` : 'Client khai báo, chưa gửi ảnh',
+    ...sources.map(c => sourceItem(c.id, c.name || c.id,
+      c.image_count ? `${c.image_count} ảnh · lúc ${clock(c.last_capture)}`
+        : (c.capture ? 'Đang chờ Client chụp ảnh đầu tiên' : 'Chưa có ảnh'),
       c.last_image, recent(c))));
 }
 async function loadSources() {

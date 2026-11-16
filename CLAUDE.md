@@ -48,7 +48,8 @@ Chưa có bộ test tự động trong repo. Kiểm thử bằng cách chạy Se
 Mỗi chức năng một file — sửa lỗi chức năng nào thì vào đúng file đó (bảng "Cấu trúc thư mục" trong README.md).
 
 ### Client (`client/`)
-- `Client.py`: chỉ khởi động — đọc tham số, tạo **1 `CaptureThread` cho mỗi camera** trong `"cameras"` + `UploadThread` + `ConfigThread` + luồng chính (preview 1 camera, phím 1/2/Tab đổi camera, `--view`), dừng khi có tín hiệu.
+- `Client.py`: chỉ khởi động — đọc tham số, tạo `CameraManager` + `UploadThread` + `ConfigThread` + luồng chính (preview 1 camera, phím 1/2/Tab đổi camera, `--view`; danh sách camera có thể đổi lúc chạy), dừng khi có tín hiệu.
+  - **Camera lấy từ Website** (`cameras_from_server: true`, mặc định): `/api/config` (khóa API) trả `cameras` = camera admin bật "Client chụp ảnh" (bảng `live_streams.capture`, `ip_cameras.capture`; id `yt-<video_id>` / `ip-<id>`, xem `server/camera_sources.py`). `ConfigThread` → `CameraManager.apply()` mở / dừng **1 `CaptureThread` cho mỗi camera**, mỗi luồng có `threading.Event` dừng riêng. `false` hoặc `--source-*` → dùng mảng `"cameras"` local như cũ.
   - `capture_thread.py` — `CaptureThread` (producer): đọc frame, lưu file ảnh **atomic** (ghi file tạm → `os.replace`), ghi `LocalStore`, đẩy id vào `queue.Queue` có giới hạn.
   - `upload_thread.py` — `UploadThread` (consumer): gửi multipart lên `POST /api/images`, retry; định kỳ quét ảnh `pending` trong DB để **gửi bù** khi mất mạng.
   - `config_thread.py` — `ConfigThread`: mỗi `config_poll_interval` giây gọi `GET /api/config?client_id=...`, cập nhật `SharedConfig` (`shared_config.py`, có `threading.Lock`).

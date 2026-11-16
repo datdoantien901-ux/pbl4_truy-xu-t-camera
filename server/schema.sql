@@ -77,7 +77,8 @@ CREATE TABLE IF NOT EXISTS live_streams (
     title     VARCHAR(255) NOT NULL,
     channel   VARCHAR(255),
     added_by  VARCHAR(50),
-    added_at  DATETIME(3) NOT NULL
+    added_at  DATETIME(3) NOT NULL,
+    capture   TINYINT NOT NULL DEFAULT 0   -- 1 = Client chụp ảnh từ camera này
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Camera IP xem trực tiếp trên trang /ipcam. url có thể chứa mật khẩu camera → Server không gửi ra trình duyệt
@@ -86,5 +87,6 @@ CREATE TABLE IF NOT EXISTS ip_cameras (
     name      VARCHAR(100) NOT NULL,
     url       VARCHAR(500) NOT NULL,
     added_by  VARCHAR(50),
-    added_at  DATETIME(3) NOT NULL
+    added_at  DATETIME(3) NOT NULL,
+    capture   TINYINT NOT NULL DEFAULT 0   -- 1 = Client chụp ảnh từ camera này
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
