@@ -13,7 +13,7 @@ Hướng dẫn cho Claude Code (và các AI agent khác) khi làm việc trong r
 
 - **Client** (`client/`): đọc nguồn video (RTSP / HTTP MJPEG / webcam / file / YouTube), chụp ảnh theo chu kỳ, lưu cục bộ (file + SQLite), gửi lên Server qua HTTP. Đa luồng Producer–Consumer.
 - **Server** (`server/Server.py`): Flask REST API + MySQL, lưu ảnh vào `server/uploads/`, cấu hình Client từ xa, thống kê độ trễ.
-- **Website** (`server/templates/`, `server/static/style.css`): gallery real-time, quản lý ảnh, cấu hình, thống kê.
+- **Website** (`server/templates/`, `server/static/style.css`): Camera trực tiếp (`live.html`, 2 tab: video YouTube | gallery ảnh từ Client), Camera IP, quản lý ảnh, cấu hình, thống kê.
 
 Người dùng là sinh viên, giao tiếp bằng **tiếng Việt**. Comment, log, thông báo lỗi API và giao diện đều viết tiếng Việt — giữ nguyên như vậy.
 
