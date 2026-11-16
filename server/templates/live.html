@@ -4,7 +4,8 @@
 <div class="page-head">
   <div>
     <h1>Camera trực tiếp</h1>
-    <p>Xem video trực tiếp từ camera trên YouTube, hoặc ảnh mà Client chụp và gửi lên Server.
+    <p>Chọn một camera: tab <strong>Video trực tiếp</strong> phát video của camera đó, tab <strong>Ảnh từ Client</strong>
+       hiện ảnh Client chụp từ chính camera đó.{% if is_admin %} Camera bạn chọn sẽ là camera Client chụp ảnh.{% endif %}
        Camera trong mạng LAN (nhập IP) xem ở mục <a href="/ipcam">Camera IP</a>.</p>
   </div>
 </div>
@@ -25,9 +26,9 @@
       <div class="empty"><strong>Chưa chọn camera</strong>Chọn một camera trong danh sách bên phải.</div>
     </div>
     <div class="player-info">
-      <div><h2 id="pTitle">—</h2><span class="muted" id="pChannel"></span> <span id="pStatus"></span></div>
+      <div><h2 id="pTitle">—</h2><span class="muted" id="pChannel"></span> <span id="pStatus"></span>
+        <div class="capture-line" id="vCapture"></div></div>
       <div class="actions">
-        {% if is_admin %}<button class="btn" id="captureBtn" hidden></button>{% endif %}
         <button class="btn" id="checkBtn" disabled>Kiểm tra còn phát</button>
         <a class="btn" id="ytLink" target="_blank" rel="noopener noreferrer">Mở trên YouTube</a>
       </div>
@@ -65,9 +66,10 @@
 
 <div id="tab-anh" role="tabpanel" aria-labelledby="tabBtn-anh" hidden>
 <div class="tab-bar">
-  <span class="muted">Ảnh Client chụp và gửi lên Server, mới nhất hiện tự động. Bấm vào một camera trong danh sách để chọn nguồn.</span>
+  <span class="muted">Ảnh Client chụp từ camera đang chọn và gửi lên Server, ảnh mới hiện tự động.</span>
   <label class="toggle"><input type="checkbox" id="autoRefresh" checked> Tự cập nhật mỗi 2 giây</label>
 </div>
+<div class="notice capture-note" id="captureNote" hidden></div>
 <div class="live-layout">
   <div class="photo-main">
     <section class="panel latest compact" id="latest" aria-live="polite">
@@ -84,15 +86,68 @@
 {% endblock %}
 {% block scripts %}
 <script>
+// ===== Camera đang chọn — DÙNG CHUNG cho 2 tab =====
+// Tab Video phát camera này; tab Ảnh từ Client hiện ảnh Client chụp từ camera này.
+// Quản trị viên chọn camera → Server đặt camera này là camera Client chụp (POST /api/streams/<id>/select).
+let streams = [];                                              // danh sách livestream (/api/streams)
+let currentV = new URLSearchParams(location.search).get('v');  // video id camera đang chọn
+let clientOnline = null;                                       // có Client nào đang kết nối không
+
+const thumb = id => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
+const ytUrl = id => `https://www.youtube.com/watch?v=${id}`;
+const camId = v => 'yt-' + v;                                  // id camera trong ảnh (cột source) = yt-<video id>
+const currentStream = () => streams.find(s => s.video_id === currentV);
+const capturingStream = () => streams.find(s => s.capture);
+
+async function loadStreams() {
+  const picked = Object.fromEntries(streams.filter(s => s.justSelected).map(s => [s.id, s.justSelected]));
+  streams = await (await fetch('/api/streams')).json();
+  streams.forEach(s => { if (picked[s.id]) s.justSelected = picked[s.id]; });   // giữ "vừa chọn" khi tải lại
+  // Chưa chọn (hoặc camera đã bị xóa) → mặc định camera Client đang chụp, không có thì camera đầu
+  if (!currentStream()) currentV = (capturingStream() || streams[0])?.video_id || null;
+}
+
+async function refreshClientOnline() {
+  try { clientOnline = (await (await fetch('/api/clients')).json()).some(c => c.online); } catch {}
+}
+
+async function chooseCamera(v) {
+  currentV = v;
+  const u = new URL(location.href);
+  u.searchParams.set('v', v);
+  u.searchParams.delete('camera');   // tham số cũ của trang ảnh
+  history.replaceState(null, '', u);
+  const s = currentStream();
+  if (IS_ADMIN && s && !s.capture) {
+    // Admin chọn camera khác → Client chuyển sang chụp camera này
+    const r = await fetch(`/api/streams/${s.id}/select`, {method: 'POST'});
+    if (r.ok) { streams.forEach(x => x.capture = x.id === s.id ? 1 : 0); s.justSelected = Date.now(); }
+  }
+  videoTab.refresh();
+  photoTab.refresh();
+}
+
+// Một dòng mô tả trạng thái chụp của camera đang chọn (hiện ở cả 2 tab)
+function captureStatus() {
+  const s = currentStream();
+  if (!s) return null;
+  const cap = capturingStream();
+  if (clientOnline === false)
+    return {cls: 'warn', text: 'Chưa có Client nào kết nối — chạy "python Client.py" trên máy Client để bắt đầu chụp ảnh.'};
+  if (s.capture)
+    return {cls: 'ok', text: s.justSelected && Date.now() - s.justSelected < 30000
+      ? 'Đã chuyển Client sang chụp camera này — ảnh đầu tiên sẽ có sau khoảng 10–20 giây.'
+      : 'Client đang chụp ảnh từ camera này.'};
+  return {cls: 'warn', text: cap
+    ? `Client đang chụp camera "${cap.title}". Camera này chỉ có ảnh đã chụp trước đó (nếu có). Chỉ quản trị viên đổi được camera chụp.`
+    : 'Client chưa chụp camera nào. Quản trị viên chọn một camera để Client bắt đầu chụp.'};
+}
+
 // ===== Tab "Video trực tiếp": livestream YouTube =====
 const videoTab = (() => {
 const GRID_MAX = 6;   // nhiều khung nhúng cùng lúc rất nặng máy → giới hạn
-let streams = [];
-let current = new URLSearchParams(location.search).get('v');
-
-const thumb = id => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
+let active = false;
 const embed = id => `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&mute=1&playsinline=1&rel=0`;
-const ytUrl = id => `https://www.youtube.com/watch?v=${id}`;
 
 function iframe(s) {
   return el('iframe', {src: embed(s.video_id), title: s.title, loading: 'lazy',
@@ -107,21 +162,8 @@ function statusBadge(info) {
   return el('span', {class: 'badge'}, 'Đã dừng phát');
 }
 
-async function load() {
-  streams = await (await fetch('/api/streams')).json();
-  if (!streams.some(s => s.video_id === current)) current = streams[0]?.video_id || null;
-  render();
-}
-
-function select(id) {
-  current = id;
-  const u = new URL(location.href);
-  u.searchParams.set('v', id);
-  history.replaceState(null, '', u);
-  render();
-}
-
 function render() {
+  if (!active) return;
   const grid = document.getElementById('gridMode').checked;
   document.getElementById('single').hidden = grid;
   document.getElementById('grid').hidden = !grid;
@@ -134,10 +176,10 @@ function renderSingle() {
     list.replaceChildren(el('div', {class: 'empty'}, el('strong', {}, 'Chưa có camera nào'),
       IS_ADMIN ? 'Thêm link hoặc tìm camera ở bên dưới.' : 'Nhờ quản trị viên thêm link camera.'));
   } else {
-    list.replaceChildren(...streams.map(s => el('div', {class: 'stream-item' + (s.video_id === current ? ' active' : ''),
-        role: 'button', tabindex: 0, 'aria-current': s.video_id === current ? 'true' : null,
-        onclick: () => select(s.video_id),
-        onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(s.video_id); } }},
+    list.replaceChildren(...streams.map(s => el('div', {class: 'stream-item' + (s.video_id === currentV ? ' active' : ''),
+        role: 'button', tabindex: 0, 'aria-current': s.video_id === currentV ? 'true' : null,
+        onclick: () => chooseCamera(s.video_id),
+        onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); chooseCamera(s.video_id); } }},
       el('img', {src: thumb(s.video_id), alt: '', loading: 'lazy'}),
       el('span', {}, el('span', {class: 'stream-title'}, s.title), el('span', {class: 'stream-channel'}, s.channel || ''),
          s.capture ? el('span', {class: 'chip-capture', title: 'Client đang chụp ảnh từ camera này'}, 'Client đang chụp') : null),
@@ -145,11 +187,15 @@ function renderSingle() {
                                onclick: e => { e.stopPropagation(); remove(s); }}, '✕') : el('span'))));
   }
 
-  const s = streams.find(x => x.video_id === current);
+  const s = currentStream();
   const frame = document.getElementById('frame');
   const old = frame.querySelector('iframe');
   document.getElementById('pStatus').replaceChildren();
   document.getElementById('checkBtn').disabled = !s;
+  const st = captureStatus();
+  const line = document.getElementById('vCapture');
+  line.className = 'capture-line ' + (st?.cls || '');
+  line.textContent = st?.text || '';
   if (!s) {
     old?.remove();
     document.getElementById('pTitle').textContent = '—';
@@ -163,15 +209,6 @@ function renderSingle() {
   }
   document.getElementById('pTitle').textContent = s.title;
   document.getElementById('pChannel').textContent = s.channel ? 'Kênh ' + s.channel : '';
-  const cb = document.getElementById('captureBtn');
-  if (cb) {   // admin: bật / tắt Client chụp ảnh từ camera đang xem
-    cb.hidden = false;
-    cb.className = 'btn' + (s.capture ? ' btn-capture-on' : '');
-    cb.textContent = s.capture ? 'Client đang chụp · Tắt' : 'Cho Client chụp ảnh';
-    cb.title = s.capture ? 'Client đang chụp ảnh camera này gửi lên Server (tab Ảnh từ Client). Bấm để dừng.'
-                         : 'Client sẽ chụp ảnh camera này theo chu kỳ và gửi lên Server (khoảng 10 giây sau khi bật).';
-    cb.onclick = () => setCapture(s, !s.capture);
-  }
   document.getElementById('ytLink').href = ytUrl(s.video_id);
 }
 
@@ -181,15 +218,14 @@ function renderGrid() {
   box.replaceChildren(...shown.map(s => el('section', {class: 'panel'},
     el('div', {class: 'player-frame'}, iframe(s)),
     el('div', {class: 'cap'}, el('span', {title: s.title}, s.title),
-       el('button', {class: 'btn', onclick: () => { document.getElementById('gridMode').checked = false; select(s.video_id); }}, 'Xem lớn')))));
+       el('button', {class: 'btn', onclick: () => { document.getElementById('gridMode').checked = false; chooseCamera(s.video_id); }}, 'Chọn')))));
   if (streams.length > GRID_MAX)
     box.append(el('p', {class: 'muted'}, `Chỉ hiện ${GRID_MAX}/${streams.length} camera đầu để máy không bị chậm.`));
 }
 
 document.getElementById('gridMode').onchange = render;
-let loaded = false;
 document.getElementById('checkBtn').onclick = async () => {
-  const s = streams.find(x => x.video_id === current);
+  const s = currentStream();
   if (!s) return;
   const box = document.getElementById('pStatus');
   box.replaceChildren(el('span', {class: 'muted'}, 'Đang kiểm tra…'));
@@ -197,19 +233,12 @@ document.getElementById('checkBtn').onclick = async () => {
   catch { box.replaceChildren(statusBadge({error: 'không kết nối được Server'})); }
 };
 
-async function setCapture(s, on) {
-  const r = await fetch(`/api/streams/${s.id}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'},
-                                                body: JSON.stringify({capture: on})});
-  if (!r.ok) { alert('Chưa đổi được (lỗi ' + r.status + ').'); return; }
-  s.capture = on ? 1 : 0;
-  render();
-}
-
 async function remove(s) {
   if (!confirm(`Xóa "${s.title}" khỏi danh sách?`)) return;
   const r = await fetch(`/api/streams/${s.id}`, {method: 'DELETE'});
   if (!r.ok) alert('Chưa xóa được (lỗi ' + r.status + ').');
-  load();
+  await loadStreams();
+  render();
 }
 
 async function add(url, msgBox) {
@@ -221,8 +250,8 @@ async function add(url, msgBox) {
   msgBox.className = 'toast ok';
   msgBox.textContent = `Đã thêm "${j.title}".` + (j.live_status && j.live_status !== 'is_live'
     ? ' Lưu ý: video này hiện không phát trực tiếp.' : '');
-  await load();
-  select(j.video_id);
+  await loadStreams();
+  await chooseCamera(j.video_id);
   return true;
 }
 
@@ -265,21 +294,25 @@ if (IS_ADMIN) {
 }
 
   return {
-    show() { if (loaded) render(); else { loaded = true; load(); } },
+    show() { active = true; render(); },
     hide() {   // rời tab → gỡ khung nhúng để video ngừng phát (đỡ tốn mạng)
+      active = false;
       document.getElementById('frame').querySelector('iframe')?.remove();
       document.getElementById('grid').replaceChildren();
     },
+    refresh: render,
   };
 })();
 
-// ===== Tab "Ảnh từ Client": gallery real-time =====
+// ===== Tab "Ảnh từ Client": ảnh Client chụp từ camera đang chọn =====
 const photoTab = (() => {
 const PER_PAGE = 24;
 const REFRESH_MS = 2000;   // chu kỳ làm mới (ảnh hưởng trực tiếp tới độ trễ chụp → hiển thị)
 let page = 1;
 let lastSignature = null;
-let camera = cameraFromUrl();   // '' = tất cả camera
+let active = false;
+let stats = {};            // id camera (yt-...) → {image_count, last_capture, last_image} từ /api/cameras
+let listSig = '';
 
 function markDisplayed(img, it) {
   // Ảnh hiện lên màn hình lần đầu → báo server để đo độ trễ chụp → hiển thị
@@ -295,12 +328,13 @@ function renderLatest(it) {
   const frame = box.querySelector('.latest-frame');
   const info = box.querySelector('.latest-info');
   frame.querySelector('img')?.remove();
+  const s = currentStream();
   if (!it) {
-    info.replaceChildren(camera
-      ? el('div', {class: 'empty'}, el('strong', {}, `Camera "${camera}" chưa có ảnh`),
-          'Kiểm tra link camera trong client/.env và Client đang chạy.')
-      : el('div', {class: 'empty'}, el('strong', {}, 'Chưa có ảnh nào'),
-          'Chạy Client để bắt đầu gửi ảnh lên server.'));
+    info.replaceChildren(el('div', {class: 'empty'},
+      el('strong', {}, s ? `"${s.title}" chưa có ảnh` : 'Chưa chọn camera'),
+      s ? (s.capture ? 'Client đang chụp camera này, ảnh sẽ hiện ở đây sau mỗi lần chụp.'
+                     : 'Client chưa chụp camera này.')
+        : 'Chọn một camera trong danh sách.'));
     return;
   }
   const img = el('img', {src: '/' + it.file_path, alt: `Ảnh #${it.id} chụp lúc ${fmtTime(it.capture_time)}`});
@@ -313,28 +347,28 @@ function renderLatest(it) {
       el('div', {class: 'latest-date'}, day(it.capture_time))),
     el('dl', {class: 'facts'},
       el('dt', {}, 'Ảnh số'), el('dd', {}, '#' + it.id),
-      el('dt', {}, 'Camera'), el('dd', {}, it.source || '—'),
       el('dt', {}, 'Client'), el('dd', {}, it.client_id || '—'),
       el('dt', {}, 'Chụp → nhận'), el('dd', {}, fmtSec(latency(it.capture_time, it.received_time))),
       el('dt', {}, 'Độ phân giải'), el('dd', {}, it.width && it.height ? `${it.width} × ${it.height}` : '—'),
-      el('dt', {}, 'Dung lượng'), el('dd', {}, it.file_size_kb + ' KB')),
+      el('dt', {}, 'Dung lượng'), el('dd', {}, it.file_size_kb + ' KB'),
+      el('dt', {}, 'Chu kỳ chụp'), el('dd', {}, it.interval_used ? it.interval_used + ' giây' : '—')),
     el('a', {class: 'btn', href: `/image/${it.id}`}, 'Xem chi tiết'));
 }
 
 async function loadGallery(p) {
   page = p;
-  const q = new URLSearchParams({page: p, per_page: PER_PAGE});
-  if (camera) q.set('camera', camera);
+  const s = currentStream();
+  if (!s) { renderLatest(null); document.getElementById('gallery').replaceChildren(); return; }
+  const q = new URLSearchParams({page: p, per_page: PER_PAGE, camera: camId(s.video_id)});
   const data = await (await fetch('/api/images?' + q)).json();
-  const signature = camera + ':' + p + ':' + data.items.map(i => i.id).join(',');
+  const signature = s.video_id + ':' + p + ':' + data.items.map(i => i.id).join(',');
   if (signature === lastSignature) return;   // không có ảnh mới → không vẽ lại
   lastSignature = signature;
 
   if (p === 1) renderLatest(data.items[0]);
   const items = p === 1 ? data.items.slice(1) : data.items;
-  const of = camera ? ` của camera ${camera}` : '';
   document.getElementById('recentTitle').textContent =
-    data.total ? `Ảnh gần đây${of} (${data.total} ảnh trên server)` : `Ảnh gần đây${of}`;
+    `Ảnh gần đây của "${s.title}"` + (data.total ? ` (${data.total} ảnh)` : '');
 
   const g = document.getElementById('gallery');
   g.replaceChildren(...items.map(it => {
@@ -356,62 +390,73 @@ async function loadGallery(p) {
   }
 }
 
+// ----- Danh sách camera bên phải = đúng danh sách camera trực tiếp ở tab Video -----
+function renderSources() {
+  const now = Date.now();
+  document.getElementById('sourceList').replaceChildren(...streams.map(s => {
+    const st = stats[camId(s.video_id)];
+    const on = s.video_id === currentV;
+    const recent = st?.last_capture && now - new Date(st.last_capture) < 30000;   // có ảnh trong 30 giây qua
+    return el('div', {class: 'stream-item' + (on ? ' active' : ''), role: 'button', tabindex: 0,
+        'aria-current': on ? 'true' : null, onclick: () => chooseCamera(s.video_id),
+        onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); chooseCamera(s.video_id); } }},
+      // ảnh thu nhỏ: ảnh Client chụp mới nhất, chưa có thì ảnh của YouTube
+      el('img', {src: st?.last_image ? '/' + st.last_image : thumb(s.video_id), alt: '', loading: 'lazy'}),
+      el('span', {}, el('span', {class: 'stream-title'}, s.title),
+        el('span', {class: 'stream-channel'}, recent && el('span', {class: 'dot-live', title: 'Vừa có ảnh mới'}),
+          st?.image_count ? `${st.image_count} ảnh · lúc ${clock(st.last_capture)}` : 'Chưa có ảnh'),
+        s.capture ? el('span', {class: 'chip-capture'}, 'Client đang chụp') : null),
+      el('span'));
+  }));
+}
+
+function renderNote() {
+  const st = captureStatus();
+  const box = document.getElementById('captureNote');
+  box.hidden = !st;
+  if (st) { box.className = 'notice capture-note ' + st.cls; box.textContent = st.text; }
+}
+
+async function loadStats() {
+  try {
+    const cams = await (await fetch('/api/cameras')).json();
+    stats = Object.fromEntries(cams.map(c => [c.id, c]));
+  } catch { return; }
+  const sig = JSON.stringify(stats) + currentV + streams.map(s => s.capture).join('');
+  if (sig === listSig) return;   // không đổi → không vẽ lại (ảnh thu nhỏ không bị nháy)
+  listSig = sig;
+  renderSources();
+}
+
 const live = document.getElementById('autoRefresh');
 const tag = document.getElementById('liveTag');
 live.onchange = () => {
   tag.textContent = live.checked ? 'Đang cập nhật' : 'Đã tạm dừng';
   tag.classList.toggle('paused', !live.checked);
 };
-// ----- Danh sách nguồn bên phải (giống danh sách camera ở tab Video) -----
-let sources = [];
-let sourcesSig = '';
-function pickSource(id) {
-  camera = id;
-  cameraToUrl(camera);
-  lastSignature = null;
-  renderSources();
-  loadGallery(1);
-}
-function sourceItem(id, title, sub, image, sending) {
-  const on = camera === id;
-  return el('div', {class: 'stream-item' + (on ? ' active' : ''), role: 'button', tabindex: 0,
-      'aria-current': on ? 'true' : null, onclick: () => pickSource(id),
-      onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickSource(id); } }},
-    image ? el('img', {src: '/' + image, alt: '', loading: 'lazy'}) : el('span', {class: 'thumb-empty'}, 'Chưa có ảnh'),
-    el('span', {}, el('span', {class: 'stream-title'}, title),
-       el('span', {class: 'stream-channel'}, sending && el('span', {class: 'dot-live', title: 'Đang gửi ảnh'}), sub)),
-    el('span'));
-}
-function renderSources() {
-  const box = document.getElementById('sourceList');
-  const newest = sources.filter(c => c.last_capture).sort((a, b) => b.last_capture.localeCompare(a.last_capture))[0];
-  const now = Date.now();
-  const recent = c => c.last_capture && now - new Date(c.last_capture) < 30000;   // có ảnh trong 30 giây qua
-  box.replaceChildren(
-    sourceItem('', 'Tất cả camera', `Mọi nguồn · ${sources.length} camera`, newest?.last_image, sources.some(recent)),
-    ...sources.map(c => sourceItem(c.id, c.name || c.id,
-      c.image_count ? `${c.image_count} ảnh · lúc ${clock(c.last_capture)}`
-        : (c.capture ? 'Đang chờ Client chụp ảnh đầu tiên' : 'Chưa có ảnh'),
-      c.last_image, recent(c))));
-}
-async function loadSources() {
-  try { sources = await (await fetch('/api/cameras')).json(); } catch { return; }
-  if (camera && !sources.some(c => c.id === camera)) sources.push({id: camera, image_count: 0});
-  const sig = JSON.stringify(sources) + camera;
-  if (sig === sourcesSig) return;   // không đổi → không vẽ lại (ảnh thu nhỏ không bị nháy)
-  sourcesSig = sig;
-  renderSources();
-}
-setInterval(() => { if (active) loadSources(); }, 5000);   // camera mới / ảnh mới → cập nhật danh sách
 
-let active = false;
 // Chỉ làm mới khi đang mở tab này: ảnh chỉ được tính "đã hiển thị" (đo độ trễ) khi người dùng thật sự thấy
 setInterval(() => { if (active && live.checked && page === 1) loadGallery(1); }, REFRESH_MS);
+setInterval(() => { if (active) { loadStats(); renderNote(); } }, 5000);
+
   return {
-    show() { active = true; lastSignature = null; loadSources(); loadGallery(page); },
+    show() { active = true; this.refresh(); },
     hide() { active = false; },
+    refresh() {
+      if (!active) return;
+      lastSignature = null; listSig = '';
+      renderNote(); renderSources(); loadStats(); loadGallery(1);
+    },
   };
 })();
+
+// Trạng thái Client / camera đang chụp có thể đổi từ nơi khác (admin khác, Client tắt) → cập nhật định kỳ
+setInterval(async () => {
+  await refreshClientOnline();
+  const before = streams.map(s => s.capture).join('');
+  await loadStreams();
+  if (streams.map(s => s.capture).join('') !== before) { videoTab.refresh(); photoTab.refresh(); }
+}, 10000);
 
 // ===== Chuyển tab (lưu trên URL ?tab=anh để tải lại trang / gửi link vẫn giữ) =====
 const TABS = {video: videoTab, anh: photoTab};
@@ -435,6 +480,10 @@ function showTab(name, push) {
   TABS[name].show();
 }
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => showTab(b.dataset.tab, true));
-showTab(new URLSearchParams(location.search).get('tab') || 'video', false);
+
+(async () => {
+  await Promise.all([loadStreams(), refreshClientOnline()]);
+  showTab(new URLSearchParams(location.search).get('tab') || 'video', false);
+})();
 </script>
 {% endblock %}
