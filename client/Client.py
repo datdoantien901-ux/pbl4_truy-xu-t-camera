@@ -189,8 +189,14 @@ def main():
             else:
                 try:
                     if cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
-                        log.info('Cửa sổ đã đóng. Thoát...')
-                        stop_event.set()
+                        # Đóng cửa sổ xem trước KHÔNG dừng Client (trước đây dừng hẳn → người dùng tưởng
+                        # Client không chụp được). Client vẫn chụp + gửi ảnh; dừng bằng q hoặc Ctrl+C.
+                        log.info('Đã đóng cửa sổ xem trước. Client vẫn tiếp tục chụp và gửi ảnh '
+                                 '(nhấn Ctrl+C trong terminal để dừng Client).')
+                        settings['show_preview'] = False
+                        if viewing is not None:
+                            viewing.set_preview_active(False)   # không giải mã khung xem trước nữa
+                        cv2.destroyAllWindows()
                 except cv2.error:
                     pass
     finally:
