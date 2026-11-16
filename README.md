@@ -64,7 +64,11 @@ server/
   routes/images.py    API ảnh       /api/images..., /uploads/<file>
   routes/config.py    API cấu hình  /api/config, /api/config/history
   routes/monitor.py   API giám sát  /api/stats, /api/clients, /api/cameras
-  routes/web.py       các trang web /, /manage, /config, /stats, /image/<id>
+  routes/web.py       các trang web /login, /, /live, /manage, /config, /users, /account, /stats, /image/<id>
+  routes/streams.py   API camera YouTube  /api/streams...
+  routes/users.py     API tài khoản /api/me, /api/users...
+  auth.py             đăng nhập + phân quyền (admin / viewer) + khóa API của Client
+  youtube.py          kiểm tra / tìm livestream YouTube bằng yt-dlp
   templates/, static/ giao diện
   schema.sql          schema MySQL (db.py cũng tự tạo khi chạy)
   migrate_sqlite_to_mysql.py  chuyển dữ liệu cũ từ server.db (SQLite) sang MySQL
@@ -96,6 +100,10 @@ python Server.py
 ```
 
 - Server kết nối MySQL theo biến môi trường `MYSQL_HOST` (mặc định `localhost`), `MYSQL_PORT` (`3306`), `MYSQL_USER` (`root`), `MYSQL_PASSWORD` (rỗng), `MYSQL_DATABASE` (`pbl4_camera`). Database và các bảng tự tạo khi chạy lần đầu. Để khỏi gõ lại mỗi lần chạy: chép `server/.env.example` thành `server/.env` rồi điền cổng, mật khẩu (file `.env` không được commit). Hoặc đặt tạm trong PowerShell: `$env:MYSQL_PASSWORD="matkhau"; python Server.py` — biến đặt trong terminal được ưu tiên hơn `.env`.
+- **Bảo mật** (đặt trong `server/.env`, xem `.env.example`):
+  - `PBL4_API_KEY`: khóa bí mật Client phải gửi kèm (header `X-API-Key`). Đặt **giống hệt** trong `client/.env`. Sinh khóa: `python -c "import secrets; print(secrets.token_urlsafe(24))"`.
+  - `PBL4_ADMIN_USER` / `PBL4_ADMIN_PASSWORD`: tài khoản admin tạo lần đầu. Để trống mật khẩu → Server sinh ngẫu nhiên và in ra màn hình.
+  - `PBL4_SECRET_KEY`: khóa ký cookie đăng nhập (để trống → khởi động lại Server là phải đăng nhập lại).
 - Có dữ liệu cũ trong `server.db` (SQLite)? Chạy một lần `python migrate_sqlite_to_mysql.py` để chép sang MySQL.
 
 - Mặc định server lắng nghe `0.0.0.0:5000`, nên máy khác trong mạng LAN truy cập được qua `http://<IP-máy-server>:5000`.
@@ -105,6 +113,8 @@ python Server.py
 ### 2. Client
 
 Sửa `client/client_config.json` (danh sách camera, địa chỉ server), rồi chạy:
+
+Chép `client/.env.example` thành `client/.env` và điền `PBL4_API_KEY` **trùng với Server**. Sai hoặc thiếu khóa thì Server trả `401`; Client ghi lỗi vào log và giữ ảnh lại để gửi bù khi sửa xong khóa.
 
 ```bash
 cd client
@@ -177,20 +187,49 @@ iPhone / Camera IP ──Wi-Fi/LAN──┐
 3. Trên máy Client, đặt `server_url = "http://<IP-máy-Server>:5000"`.
 4. **Đồng bộ đồng hồ hai máy (NTP)** trước khi đo độ trễ. Trên Windows: *Settings → Time → Sync now*.
 
+## Phân quyền
+
+| Ai | Xác thực bằng | Được làm |
+|---|---|---|
+| **Client** (máy chụp ảnh) | header `X-API-Key` = `PBL4_API_KEY` | gửi ảnh, lấy cấu hình |
+| **viewer** (người xem) | đăng nhập Website | xem ảnh, camera YouTube, thống kê; tự đổi mật khẩu |
+| **admin** (quản trị viên) | đăng nhập Website | như viewer + xóa ảnh, đổi cấu hình, quản lý người dùng, thêm/xóa camera YouTube |
+
+- Mặc định từ chối: mọi trang và API đều phải đăng nhập, trừ `/login`, `/static/…` và 2 API của Client. Ảnh trong `/uploads/` cũng cần đăng nhập.
+- Mật khẩu lưu dạng băm (werkzeug). Cookie phiên có `HttpOnly`, `SameSite=Lax` (chống CSRF) và hết hạn sau 12 giờ. Đăng nhập sai 5 lần trong 5 phút từ một IP thì IP đó bị khóa 5 phút. Admin đổi quyền hoặc xóa tài khoản thì phiên của tài khoản đó mất hiệu lực ngay.
+- **Hạn chế:** Server chạy HTTP thường nên mật khẩu và khóa API đi qua mạng ở dạng rõ. Khi triển khai thật cần HTTPS (TLS), ví dụ đặt Server sau nginx có chứng chỉ.
+
+## Camera YouTube (`/live`)
+
+Xem trực tiếp livestream YouTube ngay trên Website bằng khung nhúng (`youtube-nocookie.com/embed`). Trình duyệt tải video thẳng từ YouTube, Server chỉ lưu danh sách link (bảng `live_streams`).
+- Chọn camera ở danh sách bên phải, hoặc bật **Xem nhiều camera cùng lúc** (lưới, tối đa 6).
+- Admin dán link (`watch?v=`, `youtu.be/`, `/live/`) → Server dùng **yt-dlp** kiểm tra video có tồn tại và có cho nhúng không. Admin cũng có thể **tìm camera đang phát** theo từ khóa (bộ lọc "Trực tiếp" của YouTube); kết quả đánh dấu link không cho nhúng.
+- Lần chạy đầu, Server nạp sẵn 10 camera mẫu đã kiểm tra (Đà Nẵng, Hà Nội, Nha Trang, Tokyo, Mỹ…). Livestream có thể dừng bất cứ lúc nào: dùng nút *Kiểm tra còn phát*, rồi xóa hoặc thêm link khác.
+
 ## REST API
 
-| Method | Endpoint | Mô tả |
-|---|---|---|
-| POST | `/api/images` | Nhận ảnh (multipart: `file`, `capture_time`, `sent_time`, `width`, `height`, `client_id`, ...) |
-| GET | `/api/images?page=1&per_page=20&camera=...&start=...&end=...&q=...` | Danh sách, phân trang, lọc theo camera (`source`) / thời gian / tên |
-| GET | `/api/images/<id>` | Chi tiết ảnh |
-| DELETE | `/api/images/<id>` | Xóa ảnh |
-| GET | `/api/config?client_id=...&cameras=youtube,nha` | Client lấy cấu hình mới nhất, đồng thời báo các camera nó khai báo |
-| POST | `/api/config` | Thiết lập `capture_interval`, `jpeg_quality`, `resize_width`, `max_images` |
-| GET | `/api/config/history` | Lịch sử thay đổi cấu hình |
-| GET | `/api/stats?limit=100` | Thống kê độ trễ và chu kỳ chụp thực tế |
-| GET | `/api/clients` | Client đang kết nối (IP, lần cuối hoạt động) |
-| GET | `/api/cameras` | Các camera (đã gửi ảnh hoặc Client khai báo): `id`, `image_count`, `last_capture`, `clients` — dùng cho ô chọn camera trên Website |
+| Method | Endpoint | Quyền | Mô tả |
+|---|---|---|---|
+| POST | `/api/images` | Client | Nhận ảnh (multipart: `file`, `capture_time`, `sent_time`, `width`, `height`, `client_id`, ...) |
+| GET | `/api/images?page=1&per_page=20&camera=...&start=...&end=...&q=...` | viewer | Danh sách, phân trang, lọc theo camera (`source`) / thời gian / tên |
+| GET | `/api/images/<id>` | viewer | Chi tiết ảnh |
+| DELETE | `/api/images/<id>` | admin | Xóa ảnh |
+| GET | `/api/config?client_id=...&cameras=youtube,nha` | Client / viewer | Client lấy cấu hình mới nhất, đồng thời báo các camera nó khai báo |
+| POST | `/api/config` | admin | Thiết lập `capture_interval`, `jpeg_quality`, `resize_width`, `max_images` |
+| GET | `/api/config/history` | admin | Lịch sử thay đổi cấu hình |
+| GET | `/api/stats?limit=100` | viewer | Thống kê độ trễ và chu kỳ chụp thực tế |
+| GET | `/api/clients` | viewer | Client đang kết nối (IP, lần cuối hoạt động) |
+| GET | `/api/cameras` | viewer | Các camera (đã gửi ảnh hoặc Client khai báo): `id`, `image_count`, `last_capture`, `clients` — dùng cho ô chọn camera trên Website |
+| GET | `/api/streams` | viewer | Danh sách livestream YouTube |
+| POST | `/api/streams` | admin | Thêm link `{url}` (Server kiểm tra bằng yt-dlp) |
+| DELETE | `/api/streams/<id>` | admin | Xóa link |
+| GET | `/api/streams/<id>/check` | viewer | Link còn phát trực tiếp không |
+| GET | `/api/streams/search?q=...` | admin | Tìm livestream đang phát trên YouTube |
+| GET / POST | `/api/me`, `/api/me/password` | viewer | Người đang đăng nhập / tự đổi mật khẩu `{old, new}` |
+| GET / POST | `/api/users` | admin | Danh sách / tạo tài khoản `{username, password, role}` |
+| PATCH / DELETE | `/api/users/<id>` | admin | Đổi quyền, đặt lại mật khẩu `{role?, password?}` / xóa |
+
+"Quyền viewer" nghĩa là mọi tài khoản đã đăng nhập. Chưa đăng nhập thì API trả `401`, không đủ quyền thì trả `403`.
 
 ## Kiểm thử
 

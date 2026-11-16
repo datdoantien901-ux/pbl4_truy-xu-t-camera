@@ -1,6 +1,6 @@
 # Server — API cấu hình từ xa
 
-> Mã chức năng: `server-config` · Nhánh sửa lỗi: `fix/server-config` · Cập nhật lần cuối: **2026-11-02**
+> Mã chức năng: `server-config` · Nhánh sửa lỗi: `fix/server-config` · Cập nhật lần cuối: **2026-11-16**
 
 Client lấy cấu hình (`GET /api/config`), Website đặt tham số (`POST /api/config`, giới hạn trong `CONFIG_LIMITS`), lịch sử thay đổi (`/api/config/history`).
 
@@ -18,5 +18,6 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-16 | `feature/phan-quyen` | Tính năng | `POST /api/config`, `/api/config/history` chỉ admin; `changed_by` ghi `tên (IP)`. `GET /api/config` nhận khóa API (Client) hoặc phiên đăng nhập (Website); chỉ ghi nhận `clients` khi là Client thật | routes/config.py |
 | 2026-11-02 | `feature/web-camera-filter` | Tính năng | `GET /api/config` nhận `cameras=youtube,nha` (lọc id hợp lệ, bỏ trùng) → lưu vào `clients.cameras` | routes/config.py |
 | 2026-11-02 | `refactor/server-config` · `cae1685` | Tái cấu trúc | Tách API cấu hình ra `routes/config.py` (Blueprint `config`) | routes/config.py, Server.py |

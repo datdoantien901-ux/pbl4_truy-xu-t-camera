@@ -1,0 +1,98 @@
+{% extends '_layout.html' %}
+{% block title %}Người dùng{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Người dùng</h1>
+    <p><strong>Quản trị viên</strong> có toàn quyền. <strong>Người xem</strong> chỉ xem ảnh, camera YouTube và thống kê;
+       không xóa ảnh, không đổi cấu hình, không quản lý người dùng.</p>
+  </div>
+</div>
+
+<h2 class="section-title" style="margin-top:0">Thêm tài khoản</h2>
+<form id="add" class="panel user-form" autocomplete="off">
+  <label class="field"><span>Tên đăng nhập</span>
+    <input type="text" name="username" required pattern="[A-Za-z0-9_.\-]{3,50}" placeholder="vd: sinhvien01"
+           title="3–50 ký tự: chữ không dấu, số, . _ -"></label>
+  <label class="field"><span>Mật khẩu (ít nhất 6 ký tự)</span>
+    <input type="password" name="password" required minlength="6" autocomplete="new-password"></label>
+  <label class="field"><span>Quyền</span>
+    <select name="role"><option value="viewer">Người xem</option><option value="admin">Quản trị viên</option></select></label>
+  <button class="btn btn-primary" type="submit">Thêm</button>
+</form>
+<div class="toast" id="msg" role="status"></div>
+
+<h2 class="section-title">Danh sách tài khoản</h2>
+<div class="panel table-wrap">
+  <table class="data">
+    <thead><tr><th>Tên đăng nhập</th><th>Quyền</th><th>Tạo lúc</th><th>Đăng nhập lần cuối</th><th></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<p class="muted" style="margin-top:1rem">Đổi mật khẩu của chính bạn ở trang <a href="/account">Tài khoản</a>.</p>
+{% endblock %}
+{% block scripts %}
+<script>
+const ME = {{ current_user.id }};
+const ROLE_NAME = {admin: 'Quản trị viên', viewer: 'Người xem'};
+const msg = document.getElementById('msg');
+function say(ok, text) { msg.className = 'toast ' + (ok ? 'ok' : 'err'); msg.textContent = text; }
+
+async function api(url, method, body) {
+  const r = await fetch(url, {method, headers: {'Content-Type': 'application/json'},
+                              body: body ? JSON.stringify(body) : undefined});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('lỗi ' + r.status));
+  return j;
+}
+
+async function load() {
+  const users = await (await fetch('/api/users')).json();
+  document.getElementById('rows').replaceChildren(...users.map(u => {
+    const me = u.id === ME;
+    return el('tr', {},
+      el('td', {}, el('strong', {}, u.username), me ? ' (bạn)' : ''),
+      el('td', {}, el('span', {class: 'role-pill ' + u.role}, ROLE_NAME[u.role] || u.role)),
+      el('td', {}, fmtTime(u.created_at)),
+      el('td', {}, fmtTime(u.last_login)),
+      el('td', {}, el('div', {class: 'row-actions'},
+        !me && el('button', {class: 'btn', onclick: () => setRole(u, u.role === 'admin' ? 'viewer' : 'admin')},
+                  u.role === 'admin' ? 'Hạ thành người xem' : 'Nâng lên quản trị'),
+        el('button', {class: 'btn', onclick: () => resetPw(u)}, 'Đặt lại mật khẩu'),
+        !me && el('button', {class: 'btn btn-danger', onclick: () => del(u)}, 'Xóa'))));
+  }));
+}
+
+async function setRole(u, role) {
+  try { await api(`/api/users/${u.id}`, 'PATCH', {role}); say(true, `Đã đổi quyền của ${u.username} thành ${ROLE_NAME[role]}.`); }
+  catch (e) { say(false, e.message); }
+  load();
+}
+async function resetPw(u) {
+  const pw = prompt(`Mật khẩu mới cho ${u.username} (ít nhất 6 ký tự):`);
+  if (!pw) return;
+  try { await api(`/api/users/${u.id}`, 'PATCH', {password: pw}); say(true, `Đã đặt lại mật khẩu cho ${u.username}.`); }
+  catch (e) { say(false, e.message); }
+}
+async function del(u) {
+  if (!confirm(`Xóa tài khoản ${u.username}?`)) return;
+  try { await api(`/api/users/${u.id}`, 'DELETE'); say(true, `Đã xóa ${u.username}.`); }
+  catch (e) { say(false, e.message); }
+  load();
+}
+
+document.getElementById('add').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    await api('/api/users', 'POST', {username: f.username.value.trim(), password: f.password.value, role: f.role.value});
+    say(true, `Đã thêm tài khoản ${f.username.value.trim()}.`);
+    f.reset();
+    load();
+  } catch (err) { say(false, err.message); }
+});
+
+load();
+</script>
+{% endblock %}

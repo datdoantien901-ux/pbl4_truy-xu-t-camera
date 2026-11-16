@@ -16,6 +16,7 @@ class ConfigThread(threading.Thread):
         super().__init__(name='ConfigThread', daemon=True)
         self.url = settings['server_url'] + '/api/config'
         self.params = {'client_id': settings['client_id'], 'cameras': ','.join(camera_ids)}
+        self.headers = {'X-API-Key': settings['api_key']} if settings.get('api_key') else {}
         self.period = settings['config_poll_interval']
         self.cfg = shared_cfg
         self.stop_event = stop_event
@@ -23,7 +24,9 @@ class ConfigThread(threading.Thread):
     def run(self):
         while not self.stop_event.is_set():
             try:
-                r = requests.get(self.url, params=self.params, timeout=3)
+                r = requests.get(self.url, params=self.params, headers=self.headers, timeout=3)
+                if r.status_code in (401, 403):
+                    log.warning('[CONFIG] Server từ chối khóa API (HTTP %s) — kiểm tra PBL4_API_KEY', r.status_code)
                 r.raise_for_status()
                 old = self.cfg.update(r.json())
                 if old is not None:

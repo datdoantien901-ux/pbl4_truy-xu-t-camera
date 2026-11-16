@@ -1,0 +1,9 @@
+{% extends '_layout.html' %}
+{% block title %}Không đủ quyền{% endblock %}
+{% block content %}
+<div class="panel empty">
+  <strong>Không đủ quyền</strong>
+  <p>{{ message }}. Tài khoản của bạn chỉ có quyền xem.</p>
+  <a class="btn" href="/">Về trang Ảnh trực tiếp</a>
+</div>
+{% endblock %}

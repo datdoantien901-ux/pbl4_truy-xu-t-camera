@@ -1,18 +1,19 @@
 """
 API ảnh:
     GET    /uploads/<file>             trả file ảnh
-    POST   /api/images                 nhận ảnh mới (multipart/form-data)
+    POST   /api/images                 nhận ảnh mới (multipart/form-data) — Client, cần khóa API
     GET    /api/images                 danh sách (phân trang, lọc theo thời gian, ?camera=<id>)
     GET    /api/images/<id>            chi tiết 1 ảnh
-    DELETE /api/images/<id>            xóa ảnh
+    DELETE /api/images/<id>            xóa ảnh — chỉ admin
     POST   /api/images/<id>/displayed  trình duyệt báo ảnh đã hiển thị (đo độ trễ)
 """
 import os
 import uuid
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request, send_from_directory
+from flask import Blueprint, g, jsonify, request, send_from_directory
 
+from auth import admin_required
 from db import get_db, to_json, touch_client
 from settings import ALLOWED_EXT, UPLOAD_FOLDER, log
 from storage import cleanup_old_images, looks_like_image, remove_file
@@ -149,6 +150,7 @@ def get_image(image_id):
 
 
 @images_bp.route('/api/images/<int:image_id>', methods=['DELETE'])
+@admin_required
 def delete_image(image_id):
     conn = get_db()
     cur = conn.cursor()
@@ -161,7 +163,7 @@ def delete_image(image_id):
     cur.execute('DELETE FROM images WHERE id = %s', (image_id,))
     conn.commit()
     conn.close()
-    log.info('[DELETE] #%d bởi %s', image_id, request.remote_addr)
+    log.info('[DELETE] #%d bởi %s (%s)', image_id, g.user['username'], request.remote_addr)
     return jsonify({'message': 'Đã xóa', 'id': image_id})
 
 

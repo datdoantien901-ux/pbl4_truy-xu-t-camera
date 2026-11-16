@@ -28,6 +28,8 @@ class UploadThread(threading.Thread):
         self.enqueued = enqueued
         self.stop_event = stop_event
         self.session = requests.Session()   # giữ kết nối TCP (keep-alive) giữa các lần gửi
+        if settings.get('api_key'):
+            self.session.headers['X-API-Key'] = settings['api_key']   # Server kiểm tra khóa API
         self.sent = 0
         self.server_ok = True
 
@@ -121,6 +123,14 @@ class UploadThread(threading.Thread):
             self.server_ok = True
             log.info('[UPLOAD] #%d → server_id=%s', capture_id, server_id)
             return 'ok'
+        if r.status_code in (401, 403):
+            # Sai / thiếu khóa API: lỗi cấu hình chứ không phải lỗi ảnh → giữ ảnh, thử lại sau
+            self.store.mark_failed(capture_id, f'HTTP {r.status_code}: sai khóa API')
+            if self.server_ok:
+                log.error('[UPLOAD] Server từ chối khóa API (HTTP %s). Kiểm tra PBL4_API_KEY trong '
+                          'client/.env trùng với server/.env. Ảnh được giữ lại để gửi bù.', r.status_code)
+            self.server_ok = False
+            return 'retry'
         if 400 <= r.status_code < 500:
             self.store.mark_failed(capture_id, f'HTTP {r.status_code}: {r.text[:150]}', permanent=True)
             log.error('[UPLOAD] #%d bị server từ chối: %s %s', capture_id, r.status_code, r.text[:150])

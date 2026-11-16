@@ -1,6 +1,6 @@
 # Client — luồng gửi ảnh, gửi bù
 
-> Mã chức năng: `client-upload` · Nhánh sửa lỗi: `fix/client-upload` · Cập nhật lần cuối: **2026-11-02**
+> Mã chức năng: `client-upload` · Nhánh sửa lỗi: `fix/client-upload` · Cập nhật lần cuối: **2026-11-16**
 
 `UploadThread` (consumer): gửi multipart lên `POST /api/images`, retry backoff khi lỗi mạng, định kỳ quét ảnh `pending` trong SQLite để gửi bù.
 
@@ -18,4 +18,5 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-16 | `feature/phan-quyen` | Tính năng | Gửi header `X-API-Key`. Server trả 401/403 → không đánh dấu ảnh hỏng vĩnh viễn mà giữ lại, log lỗi 1 lần, thử lại (đã test: khóa sai → giữ 3 ảnh; chạy lại khóa đúng → gửi bù đủ 3) | upload_thread.py |
 | 2026-11-02 | `refactor/client-upload` · `02d13bc` | Tái cấu trúc | Tách `UploadThread` ra `upload_thread.py` | Client.py, upload_thread.py |

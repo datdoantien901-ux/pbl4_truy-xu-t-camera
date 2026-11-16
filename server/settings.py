@@ -47,6 +47,18 @@ CONFIG_LIMITS = [  # (tên, min, max)
     ('max_images', 1, 10000),
 ]
 
+# --- Bảo mật (đặt trong server/.env, KHÔNG ghi vào file commit) ---
+# PBL4_API_KEY     khóa bí mật Client gửi kèm header X-API-Key (để trống → không kiểm tra, chỉ dùng khi thử)
+# PBL4_SECRET_KEY  khóa ký cookie phiên đăng nhập (để trống → sinh ngẫu nhiên, khởi động lại là phải đăng nhập lại)
+# PBL4_ADMIN_USER / PBL4_ADMIN_PASSWORD  tài khoản admin tạo lần đầu khi bảng users còn trống
+API_KEY = os.getenv('PBL4_API_KEY', '')
+SECRET_KEY = os.getenv('PBL4_SECRET_KEY', '')
+ADMIN_USER = os.getenv('PBL4_ADMIN_USER', 'admin')
+ADMIN_PASSWORD = os.getenv('PBL4_ADMIN_PASSWORD', '')
+SESSION_HOURS = 12            # phiên đăng nhập hết hạn sau 12 giờ
+LOGIN_MAX_FAILS = 5           # sai mật khẩu quá 5 lần / 5 phút / 1 IP → tạm khóa
+LOGIN_LOCK_SECONDS = 300
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(LOG_DIR, exist_ok=True)
 
