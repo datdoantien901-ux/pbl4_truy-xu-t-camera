@@ -64,21 +64,21 @@
 
 <div id="tab-anh" role="tabpanel" aria-labelledby="tabBtn-anh" hidden>
 <div class="tab-bar">
-  <span class="muted">Ảnh mới từ Client hiện lên tự động. Bấm vào một ảnh để xem chi tiết.</span>
-  <div class="head-controls tab-bar-controls">
-    <label class="field"><span>Camera</span>
-      <select id="camera"><option value="">Tất cả camera</option></select></label>
-    <label class="toggle"><input type="checkbox" id="autoRefresh" checked> Tự cập nhật mỗi 2 giây</label>
-  </div>
+  <span class="muted">Ảnh Client chụp và gửi lên Server, mới nhất hiện tự động. Bấm vào một camera trong danh sách để chọn nguồn.</span>
+  <label class="toggle"><input type="checkbox" id="autoRefresh" checked> Tự cập nhật mỗi 2 giây</label>
 </div>
-<section class="panel latest" id="latest" aria-live="polite">
-  <div class="latest-frame"><span class="live-tag" id="liveTag">Đang cập nhật</span></div>
-  <div class="latest-info"><div class="empty"><strong>Chưa có ảnh nào</strong>Chạy Client để bắt đầu gửi ảnh lên server.</div></div>
-</section>
-
-<h2 class="section-title" id="recentTitle">Ảnh gần đây</h2>
-<div class="gallery" id="gallery"></div>
-<div class="pager" id="pager"></div>
+<div class="live-layout">
+  <div class="photo-main">
+    <section class="panel latest compact" id="latest" aria-live="polite">
+      <div class="latest-frame"><span class="live-tag" id="liveTag">Đang cập nhật</span></div>
+      <div class="latest-info"><div class="empty"><strong>Chưa có ảnh nào</strong>Chạy Client để bắt đầu gửi ảnh lên server.</div></div>
+    </section>
+    <h2 class="section-title" id="recentTitle">Ảnh gần đây</h2>
+    <div class="gallery" id="gallery"></div>
+    <div class="pager" id="pager"></div>
+  </div>
+  <aside class="panel stream-list" id="sourceList" aria-label="Nguồn ảnh"></aside>
+</div>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -343,21 +343,52 @@ live.onchange = () => {
   tag.textContent = live.checked ? 'Đang cập nhật' : 'Đã tạm dừng';
   tag.classList.toggle('paused', !live.checked);
 };
-const camSelect = document.getElementById('camera');
-camSelect.onchange = () => {
-  camera = camSelect.value;
+// ----- Danh sách nguồn bên phải (giống danh sách camera ở tab Video) -----
+let sources = [];
+let sourcesSig = '';
+function pickSource(id) {
+  camera = id;
   cameraToUrl(camera);
   lastSignature = null;
+  renderSources();
   loadGallery(1);
-};
-fillCameraSelect(camSelect, camera);
-setInterval(() => { if (active) fillCameraSelect(camSelect, camera); }, 10000);   // camera mới gửi ảnh → hiện trong ô chọn
+}
+function sourceItem(id, title, sub, image, sending) {
+  const on = camera === id;
+  return el('div', {class: 'stream-item' + (on ? ' active' : ''), role: 'button', tabindex: 0,
+      'aria-current': on ? 'true' : null, onclick: () => pickSource(id),
+      onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickSource(id); } }},
+    image ? el('img', {src: '/' + image, alt: '', loading: 'lazy'}) : el('span', {class: 'thumb-empty'}, 'Chưa có ảnh'),
+    el('span', {}, el('span', {class: 'stream-title'}, title),
+       el('span', {class: 'stream-channel'}, sending && el('span', {class: 'dot-live', title: 'Đang gửi ảnh'}), sub)),
+    el('span'));
+}
+function renderSources() {
+  const box = document.getElementById('sourceList');
+  const newest = sources.filter(c => c.last_capture).sort((a, b) => b.last_capture.localeCompare(a.last_capture))[0];
+  const now = Date.now();
+  const recent = c => c.last_capture && now - new Date(c.last_capture) < 30000;   // có ảnh trong 30 giây qua
+  box.replaceChildren(
+    sourceItem('', 'Tất cả camera', `Mọi nguồn · ${sources.length} camera`, newest?.last_image, sources.some(recent)),
+    ...sources.map(c => sourceItem(c.id, c.id,
+      c.image_count ? `${c.image_count} ảnh · lúc ${clock(c.last_capture)}` : 'Client khai báo, chưa gửi ảnh',
+      c.last_image, recent(c))));
+}
+async function loadSources() {
+  try { sources = await (await fetch('/api/cameras')).json(); } catch { return; }
+  if (camera && !sources.some(c => c.id === camera)) sources.push({id: camera, image_count: 0});
+  const sig = JSON.stringify(sources) + camera;
+  if (sig === sourcesSig) return;   // không đổi → không vẽ lại (ảnh thu nhỏ không bị nháy)
+  sourcesSig = sig;
+  renderSources();
+}
+setInterval(() => { if (active) loadSources(); }, 5000);   // camera mới / ảnh mới → cập nhật danh sách
 
 let active = false;
 // Chỉ làm mới khi đang mở tab này: ảnh chỉ được tính "đã hiển thị" (đo độ trễ) khi người dùng thật sự thấy
 setInterval(() => { if (active && live.checked && page === 1) loadGallery(1); }, REFRESH_MS);
   return {
-    show() { active = true; lastSignature = null; loadGallery(page); },
+    show() { active = true; lastSignature = null; loadSources(); loadGallery(page); },
     hide() { active = false; },
   };
 })();

@@ -199,6 +199,7 @@ Trang đăng nhập cho chọn vai trò trước:
 | **Quản trị viên** | bấm *Quản trị viên* → nhập mật khẩu | mọi chức năng: xóa ảnh, đổi cấu hình, thêm/xóa camera, quản lý người dùng |
 | **Client** (máy chụp ảnh) | header `X-API-Key` = `PBL4_API_KEY` | gửi ảnh, lấy cấu hình |
 
+- Vào địa chỉ Server (`http://<IP>:5000/`) **luôn hiện màn hình chọn vai trò**; nếu đang có phiên thì có thêm nút *Tiếp tục*. Phiên mất khi đóng trình duyệt, và Server tự hủy phiên sau 12 giờ.
 - Đang ở chế độ Người xem, bấm nút **Quản trị** ở cuối thanh bên trái để chuyển sang đăng nhập quản trị.
 - Muốn bắt mọi người phải có mật khẩu: đặt `PBL4_ALLOW_GUEST=0` trong `server/.env` (tài khoản quyền `viewer` tạo ở trang Người dùng vẫn đăng nhập được).
 
@@ -210,7 +211,7 @@ Trang đăng nhập cho chọn vai trò trước:
 
 Trang mặc định sau khi vào, có 2 tab:
 - **Video trực tiếp**: livestream YouTube (mô tả bên dưới).
-- **Ảnh từ Client** (`/live?tab=anh`, địa chỉ cũ `/` tự chuyển sang đây): gallery real-time ảnh Client gửi lên — khung hình mới nhất + độ trễ chụp → nhận, lọc theo camera, tự cập nhật mỗi 2 giây. Chỉ làm mới khi đang mở tab này, để số đo "chụp → hiển thị" chỉ tính ảnh người dùng thật sự thấy.
+- **Ảnh từ Client** (`/live?tab=anh`): gallery real-time ảnh Client gửi lên — khung hình mới nhất + độ trễ chụp → nhận, tự cập nhật mỗi 2 giây. **Chọn nguồn** ở danh sách bên phải (giống tab video): *Tất cả camera* hoặc từng camera, kèm ảnh mới nhất, số ảnh, giờ chụp gần nhất. Chỉ làm mới khi đang mở tab này, để số đo "chụp → hiển thị" chỉ tính ảnh người dùng thật sự thấy.
 
 Tab Video trực tiếp: xem livestream YouTube ngay trên Website bằng khung nhúng (`youtube-nocookie.com/embed`). Trình duyệt tải video thẳng từ YouTube, Server chỉ lưu danh sách link (bảng `live_streams`).
 - Chọn camera ở danh sách bên phải, hoặc bật **Xem nhiều camera cùng lúc** (lưới, tối đa 6).
@@ -244,7 +245,7 @@ Camera IP ──RTSP / HTTP──▶ Server (OpenCV đọc khung, nén JPEG) ─
 | GET | `/api/config/history` | admin | Lịch sử thay đổi cấu hình |
 | GET | `/api/stats?limit=100` | viewer | Thống kê độ trễ và chu kỳ chụp thực tế |
 | GET | `/api/clients` | viewer | Client đang kết nối (IP, lần cuối hoạt động) |
-| GET | `/api/cameras` | viewer | Các camera (đã gửi ảnh hoặc Client khai báo): `id`, `image_count`, `last_capture`, `clients` — dùng cho ô chọn camera trên Website |
+| GET | `/api/cameras` | viewer | Các camera (đã gửi ảnh hoặc Client khai báo): `id`, `image_count`, `last_capture`, `last_image`, `clients` — dùng cho danh sách nguồn / ô chọn camera trên Website |
 | GET | `/api/streams` | viewer | Danh sách livestream YouTube |
 | GET | `/api/ipcams` · `/api/ipcams/presets` | viewer | Camera IP đã lưu (URL ẩn mật khẩu) · các loại camera |
 | POST | `/api/ipcams/test` | admin | Thử kết nối `{preset, ip, port, user, password}` hoặc `{url}` → 1 ảnh JPEG |
