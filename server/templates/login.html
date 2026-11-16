@@ -21,6 +21,12 @@
     </span>
 
     {# Bước 1: chọn vai trò. Bước 2 (chỉ Quản trị viên): nhập mật khẩu #}
+    {% if current %}
+    <div class="continue-box">
+      <span>Bạn đang vào với vai trò <strong>{{ 'Người xem' if current.guest or current.role != 'admin' else 'Quản trị viên' }}</strong>{% if not current.guest %} ({{ current.username }}){% endif %}.</span>
+      <a class="btn btn-primary" href="{{ next }}">Tiếp tục</a>
+    </div>
+    {% endif %}
     <div id="choose" {% if mode == 'admin' or not allow_guest %}hidden{% endif %}>
       <h1>Bạn vào với vai trò nào?</h1>
       <div class="role-choices">

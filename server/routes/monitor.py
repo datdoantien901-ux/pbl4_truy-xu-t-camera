@@ -2,7 +2,7 @@
 API giám sát / kiểm thử:
     GET    /api/stats                  thống kê độ trễ, chu kỳ chụp thực tế
     GET    /api/clients                các Client đang kết nối (IP, lần cuối thấy)
-    GET    /api/cameras                các camera: đã gửi ảnh (cột source) + Client khai báo
+    GET    /api/cameras                các camera: đã gửi ảnh (cột source) + Client khai báo, kèm ảnh mới nhất
 """
 import statistics
 from datetime import datetime
@@ -39,9 +39,15 @@ def list_cameras():
     sau đó camera chỉ còn ảnh cũ (vd Client đã bỏ camera đó khỏi cấu hình)."""
     conn = get_db()
     cur = conn.cursor()
-    cur.execute('''SELECT source, COUNT(*) AS n, MAX(capture_time) AS last_capture FROM images
-                   WHERE source IS NOT NULL AND source <> '' GROUP BY source''')
+    cur.execute('''SELECT source, COUNT(*) AS n, MAX(capture_time) AS last_capture, MAX(id) AS last_id
+                   FROM images WHERE source IS NOT NULL AND source <> '' GROUP BY source''')
     stats = {r['source']: r for r in cur.fetchall()}
+    # Ảnh mới nhất của mỗi camera → ảnh thu nhỏ trong danh sách nguồn (tab "Ảnh từ Client")
+    last_ids = [r['last_id'] for r in stats.values()]
+    files = {}
+    if last_ids:
+        cur.execute(f"SELECT id, file_path FROM images WHERE id IN ({', '.join(['%s'] * len(last_ids))})", last_ids)
+        files = {r['id']: r['file_path'] for r in cur.fetchall()}
     cur.execute("SELECT client_id, cameras FROM clients WHERE cameras IS NOT NULL AND cameras <> '' "
                 'ORDER BY client_id')
     declared = {}
@@ -56,6 +62,7 @@ def list_cameras():
         result.append({'id': cam,
                        'image_count': s['n'] if s else 0,
                        'last_capture': iso(s['last_capture']) if s else None,
+                       'last_image': files.get(s['last_id']) if s else None,
                        'clients': declared.get(cam, [])})
     return jsonify(result)
 

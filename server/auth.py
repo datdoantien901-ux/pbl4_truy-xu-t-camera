@@ -21,7 +21,7 @@ from functools import wraps
 from flask import g, jsonify, redirect, render_template, request, session, url_for
 
 from db import get_db
-from settings import ALLOW_GUEST, API_KEY, LOGIN_LOCK_SECONDS, LOGIN_MAX_FAILS, log
+from settings import ALLOW_GUEST, API_KEY, LOGIN_LOCK_SECONDS, LOGIN_MAX_FAILS, SESSION_HOURS, log
 
 ROLES = ('admin', 'viewer')
 PUBLIC_ENDPOINTS = {'web.page_login', 'web.do_login', 'web.guest_login', 'static'}
@@ -43,6 +43,9 @@ def client_key_status():
 
 # ============ NGƯỜI DÙNG ĐANG ĐĂNG NHẬP ============
 def _load_user():
+    if session and time.time() - session.get('t', 0) > SESSION_HOURS * 3600:
+        session.clear()   # phiên quá SESSION_HOURS giờ (hoặc phiên kiểu cũ không có 't') → vào lại
+        return None
     if session.get('guest'):
         if ALLOW_GUEST:
             return GUEST

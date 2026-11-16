@@ -25,7 +25,6 @@ Chạy:  python Server.py               (mặc định lắng nghe 0.0.0.0:5000,
 """
 import os
 import secrets
-from datetime import timedelta
 
 from flask import Flask
 
@@ -38,7 +37,7 @@ from routes.monitor import monitor_bp
 from routes.streams import streams_bp
 from routes.users import users_bp
 from routes.web import web_bp
-from settings import MAX_CONTENT_LENGTH, SECRET_KEY, SESSION_HOURS, log
+from settings import MAX_CONTENT_LENGTH, SECRET_KEY, log
 
 app = Flask(__name__)
 app.config.update(
@@ -46,7 +45,6 @@ app.config.update(
     SECRET_KEY=SECRET_KEY or secrets.token_hex(32),   # khóa ký cookie phiên đăng nhập
     SESSION_COOKIE_HTTPONLY=True,     # JavaScript không đọc được cookie phiên
     SESSION_COOKIE_SAMESITE='Lax',    # trang web lạ không gửi kèm cookie khi POST/DELETE (chống CSRF)
-    PERMANENT_SESSION_LIFETIME=timedelta(hours=SESSION_HOURS),
 )
 # Không bật CORS: Website và API cùng một địa chỉ, trang web khác không được gọi API bằng phiên đăng nhập
 for bp in (images_bp, config_bp, monitor_bp, streams_bp, ipcams_bp, users_bp, web_bp):
