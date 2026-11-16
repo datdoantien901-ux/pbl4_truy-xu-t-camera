@@ -267,6 +267,14 @@ input[type=password], input[type=url], input[type=search] {
 .role-choice strong { display: block; font-size: 1rem; }
 .role-choice span span { display: block; font-size: .86rem; color: var(--ink-soft); margin-top: .15rem; }
 
+/* ---------- Tab trên trang Camera trực tiếp ---------- */
+.tabs { display: flex; gap: .25rem; border-bottom: 1px solid var(--line); margin-bottom: 1rem; overflow-x: auto; }
+.tab { font: inherit; font-weight: 600; font-size: .95rem; color: var(--ink-soft); background: none; border: 0;
+  border-bottom: 3px solid transparent; padding: .65rem 1rem; margin-bottom: -1px; cursor: pointer; white-space: nowrap; }
+.tab:hover { color: var(--ink); }
+.tab.active { color: var(--sign); border-bottom-color: var(--sign); }
+.tab-bar { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+
 /* ---------- Camera IP ---------- */
 .ipcam-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 1rem; }
 .ipcam-card { overflow: hidden; }

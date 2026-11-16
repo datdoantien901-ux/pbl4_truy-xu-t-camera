@@ -64,7 +64,7 @@ server/
   routes/images.py    API ảnh       /api/images..., /uploads/<file>
   routes/config.py    API cấu hình  /api/config, /api/config/history
   routes/monitor.py   API giám sát  /api/stats, /api/clients, /api/cameras
-  routes/web.py       các trang web /login, /live, /ipcam, /, /manage, /config, /users, /account, /stats, /image/<id>
+  routes/web.py       các trang web /login, /live (2 tab: video | ảnh từ Client), /ipcam, /manage, /config, /users, /account, /stats, /image/<id>
   routes/streams.py   API camera YouTube  /api/streams...
   routes/ipcams.py    API camera IP /api/ipcams..., luồng MJPEG /ipcam/<id>/stream
   ipcam.py            đọc camera IP bằng OpenCV, phát lại MJPEG (1 luồng đọc dùng chung / camera)
@@ -208,7 +208,11 @@ Trang đăng nhập cho chọn vai trò trước:
 
 ## Camera trực tiếp (`/live`)
 
-Trang mặc định sau khi vào. Xem trực tiếp livestream YouTube ngay trên Website bằng khung nhúng (`youtube-nocookie.com/embed`). Trình duyệt tải video thẳng từ YouTube, Server chỉ lưu danh sách link (bảng `live_streams`).
+Trang mặc định sau khi vào, có 2 tab:
+- **Video trực tiếp**: livestream YouTube (mô tả bên dưới).
+- **Ảnh từ Client** (`/live?tab=anh`, địa chỉ cũ `/` tự chuyển sang đây): gallery real-time ảnh Client gửi lên — khung hình mới nhất + độ trễ chụp → nhận, lọc theo camera, tự cập nhật mỗi 2 giây. Chỉ làm mới khi đang mở tab này, để số đo "chụp → hiển thị" chỉ tính ảnh người dùng thật sự thấy.
+
+Tab Video trực tiếp: xem livestream YouTube ngay trên Website bằng khung nhúng (`youtube-nocookie.com/embed`). Trình duyệt tải video thẳng từ YouTube, Server chỉ lưu danh sách link (bảng `live_streams`).
 - Chọn camera ở danh sách bên phải, hoặc bật **Xem nhiều camera cùng lúc** (lưới, tối đa 6).
 - Admin dán link (`watch?v=`, `youtu.be/`, `/live/`) → Server dùng **yt-dlp** kiểm tra video có tồn tại và có cho nhúng không. Admin cũng có thể **tìm camera đang phát** theo từ khóa (bộ lọc "Trực tiếp" của YouTube); kết quả đánh dấu link không cho nhúng.
 - Lần chạy đầu, Server nạp sẵn 10 camera mẫu đã kiểm tra (Đà Nẵng, Hà Nội, Nha Trang, Tokyo, Mỹ…). Livestream có thể dừng bất cứ lúc nào: dùng nút *Kiểm tra còn phát*, rồi xóa hoặc thêm link khác.
