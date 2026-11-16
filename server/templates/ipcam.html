@@ -1,0 +1,197 @@
+{% extends '_layout.html' %}
+{% block title %}Camera IP{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Camera IP</h1>
+    <p>Xem trực tiếp camera trong mạng LAN theo địa chỉ IP. Server kết nối tới camera (RTSP / HTTP) và phát lại
+       cho trình duyệt, nên máy xem không cần cài gì và không cần ở cùng mạng với camera.</p>
+  </div>
+</div>
+
+<div class="ipcam-grid" id="grid"></div>
+
+{% if is_admin %}
+<h2 class="section-title">Thêm camera theo IP</h2>
+<form id="camForm" class="panel ipcam-form" autocomplete="off">
+  <label class="field wide2"><span>Tên camera</span>
+    <input type="text" name="camname" maxlength="100" placeholder="vd: Camera cổng nhà"></label>
+  <label class="field wide2"><span>Loại camera</span><select name="preset" id="preset"></select></label>
+
+  <label class="field wide2 by-ip"><span>Địa chỉ IP</span>
+    <input type="text" name="ip" placeholder="vd: 192.168.1.20" inputmode="decimal"></label>
+  <label class="field by-ip"><span>Cổng</span><input type="number" name="port" min="1" max="65535"></label>
+  <span class="by-ip"></span>
+  <label class="field wide2 by-ip"><span>Tài khoản camera (nếu có)</span>
+    <input type="text" name="user" placeholder="vd: admin" autocomplete="off"></label>
+  <label class="field wide2 by-ip"><span>Mật khẩu camera (nếu có)</span>
+    <input type="password" name="password" autocomplete="new-password"></label>
+
+  <label class="field full by-url" hidden><span>URL đầy đủ</span>
+    <input type="text" name="url" placeholder="rtsp://user:matkhau@192.168.1.20:554/stream1  hoặc  http://192.168.1.15:8080/video"></label>
+
+  <p class="muted full" id="pattern"></p>
+  <div class="form-actions full">
+    <button class="btn" type="button" id="testBtn">Thử kết nối</button>
+    <button class="btn btn-primary" type="submit">Lưu và xem</button>
+    <span class="muted">Mật khẩu camera chỉ lưu trên Server, không hiện ra trình duyệt.</span>
+  </div>
+  <div class="full">
+    <div class="toast" id="msg" role="status"></div>
+    <img id="preview" class="ipcam-preview" alt="Ảnh thử từ camera" hidden>
+  </div>
+</form>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+const AUTO_PLAY = 4;   // trình duyệt chỉ mở ~6 kết nối tới 1 server, mỗi luồng MJPEG giữ 1 kết nối
+let cams = [];
+const playing = new Set();
+
+function card(c, idx) {
+  const frame = el('div', {class: 'ipcam-frame'});
+  const msg = el('div', {class: 'msg'});
+  const tag = el('span', {class: 'live-tag'}, 'Trực tiếp');
+  const playBtn = el('button', {class: 'btn'});
+
+  function stop(text) {
+    playing.delete(c.id);
+    frame.querySelector('img')?.remove();   // gỡ <img> → trình duyệt đóng kết nối MJPEG
+    tag.hidden = true;
+    msg.textContent = text || 'Đang tạm dừng. Bấm Xem để phát.';
+    msg.hidden = false;
+    playBtn.textContent = 'Xem';
+  }
+  function play() {
+    playing.add(c.id);
+    msg.textContent = 'Đang kết nối camera…';
+    msg.hidden = false;
+    playBtn.textContent = 'Dừng';
+    const img = el('img', {alt: 'Hình trực tiếp từ ' + c.name});
+    let got = false;
+    img.onload = () => { got = true; msg.hidden = true; tag.hidden = false; };
+    img.onerror = () => {   // luồng bị ngắt (Server khởi động lại, mất mạng) → thử lại sau 3 giây
+      if (!playing.has(c.id)) return;
+      img.remove(); tag.hidden = true;
+      msg.hidden = false; msg.textContent = 'Mất luồng hình, đang kết nối lại…';
+      setTimeout(() => { if (playing.has(c.id)) play(); }, 3000);
+    };
+    img.src = `/ipcam/${c.id}/stream?t=${Date.now()}`;
+    frame.querySelector('img')?.remove();
+    frame.prepend(img);
+    // Chưa có hình sau 8 giây → hỏi Server lý do (sai IP, sai mật khẩu…)
+    setTimeout(async () => {
+      if (got || !playing.has(c.id)) return;
+      try {
+        const s = await (await fetch(`/api/ipcams/${c.id}/status`)).json();
+        if (!got && s.error) msg.textContent = s.error;
+      } catch {}
+    }, 8000);
+  }
+  playBtn.onclick = () => playing.has(c.id) ? stop() : play();
+  tag.hidden = true;
+  frame.append(tag, msg);
+
+  const node = el('section', {class: 'panel ipcam-card'}, frame,
+    el('div', {class: 'ipcam-cap'},
+      el('span', {}, el('strong', {}, c.name), el('span', {class: 'muted'}, c.url)),
+      el('span', {class: 'actions'}, playBtn,
+        IS_ADMIN && el('button', {class: 'btn btn-danger', onclick: () => remove(c)}, 'Xóa'))));
+  if (idx < AUTO_PLAY) play(); else stop('Bấm Xem để phát (tự phát tối đa ' + AUTO_PLAY + ' camera).');
+  return node;
+}
+
+async function load() {
+  cams = await (await fetch('/api/ipcams')).json();
+  playing.clear();
+  const grid = document.getElementById('grid');
+  grid.replaceChildren();
+  if (!cams.length) {
+    grid.append(el('div', {class: 'panel empty'}, el('strong', {}, 'Chưa có camera IP nào'),
+      IS_ADMIN ? 'Nhập IP camera ở form bên dưới để bắt đầu xem.'
+               : 'Nhờ quản trị viên thêm camera theo địa chỉ IP.'));
+    return;
+  }
+  cams.forEach((c, i) => grid.append(card(c, i)));
+}
+
+async function remove(c) {
+  if (!confirm(`Xóa camera "${c.name}"?`)) return;
+  const r = await fetch(`/api/ipcams/${c.id}`, {method: 'DELETE'});
+  if (!r.ok) alert('Chưa xóa được (lỗi ' + r.status + ').');
+  load();
+}
+
+if (IS_ADMIN) {
+  const f = document.getElementById('camForm');
+  const msg = document.getElementById('msg');
+  const preview = document.getElementById('preview');
+  let presets = [];
+  const say = (cls, text) => { msg.className = 'toast ' + cls; msg.textContent = text; };
+
+  function body() {
+    const b = {name: f.camname.value.trim()};
+    if (f.preset.value === 'url') b.url = f.url.value.trim();
+    else Object.assign(b, {preset: f.preset.value, ip: f.ip.value.trim(), port: f.port.value,
+                           user: f.user.value.trim(), password: f.password.value});
+    return b;
+  }
+  function onPreset(resetPort) {
+    const p = presets.find(x => x.id === f.preset.value);
+    const byUrl = f.preset.value === 'url';
+    f.querySelectorAll('.by-ip').forEach(e => e.hidden = byUrl);
+    f.querySelectorAll('.by-url').forEach(e => e.hidden = !byUrl);
+    if (!byUrl && resetPort === true) f.port.value = p.port;   // chỉ đặt cổng mặc định khi đổi loại camera
+    document.getElementById('pattern').textContent = byUrl
+      ? 'Dán URL luồng camera (xem trong app / trang quản trị camera, thử trước bằng VLC).'
+      : 'Đường dẫn sẽ dùng: ' + p.pattern.replace('{ip}', f.ip.value.trim() || '<IP>').replace('{port}', f.port.value || p.port);
+  }
+  f.preset.onchange = () => onPreset(true);
+  f.ip.oninput = f.port.oninput = () => onPreset(false);
+
+  (async () => {
+    presets = await (await fetch('/api/ipcams/presets')).json();
+    f.preset.replaceChildren(...presets.map(p => el('option', {value: p.id}, p.name)));
+    onPreset(true);
+  })();
+
+  document.getElementById('testBtn').onclick = async (e) => {
+    e.target.disabled = true;
+    preview.hidden = true;
+    say('', 'Đang kết nối camera (tối đa khoảng 6 giây)…');
+    try {
+      const r = await fetch('/api/ipcams/test', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                  body: JSON.stringify(body())});
+      if (r.ok) {
+        URL.revokeObjectURL(preview.src);
+        preview.src = URL.createObjectURL(await r.blob());
+        preview.hidden = false;
+        say('ok', `Kết nối được! Ảnh ${r.headers.get('X-Width')} × ${r.headers.get('X-Height')} chụp từ camera. Bấm "Lưu và xem".`);
+      } else {
+        const j = await r.json().catch(() => ({}));
+        say('err', (j.error || 'Lỗi ' + r.status) + (j.url ? ` (đã thử: ${j.url})` : ''));
+      }
+    } catch { say('err', 'Không gọi được Server.'); }
+    e.target.disabled = false;
+  };
+
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const r = await fetch('/api/ipcams', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                          body: JSON.stringify(body())});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { say('err', j.error || 'Lỗi ' + r.status); return; }
+    say('ok', `Đã lưu "${j.name}".`);
+    preview.hidden = true;
+    f.camname.value = ''; f.password.value = '';
+    await load();
+    window.scrollTo({top: 0, behavior: 'smooth'});
+  });
+}
+
+// Rời trang → dừng mọi luồng (giải phóng kết nối, Server đóng camera khi không còn ai xem)
+window.addEventListener('pagehide', () => document.querySelectorAll('.ipcam-frame img').forEach(i => i.src = ''));
+load();
+</script>
+{% endblock %}

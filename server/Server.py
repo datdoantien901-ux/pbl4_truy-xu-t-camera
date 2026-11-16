@@ -11,6 +11,8 @@ Mỗi chức năng nằm ở một file riêng:
     routes/monitor.py   API giám sát  /api/stats, /api/clients
     routes/web.py       trang web     /login  /  /live  /manage  /config  /users  /stats  /image/<id>
     routes/streams.py   API camera YouTube  /api/streams...
+    routes/ipcams.py    API camera IP /api/ipcams..., luồng MJPEG /ipcam/<id>/stream
+    ipcam.py            đọc camera IP bằng OpenCV, phát MJPEG (1 luồng đọc / camera)
     routes/users.py     API tài khoản /api/me, /api/users...
     auth.py             đăng nhập (admin / viewer) + khóa API của Client
     youtube.py          kiểm tra / tìm livestream YouTube bằng yt-dlp
@@ -31,6 +33,7 @@ import auth
 from db import init_db
 from routes.config import config_bp
 from routes.images import images_bp
+from routes.ipcams import ipcams_bp
 from routes.monitor import monitor_bp
 from routes.streams import streams_bp
 from routes.users import users_bp
@@ -46,7 +49,7 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(hours=SESSION_HOURS),
 )
 # Không bật CORS: Website và API cùng một địa chỉ, trang web khác không được gọi API bằng phiên đăng nhập
-for bp in (images_bp, config_bp, monitor_bp, streams_bp, users_bp, web_bp):
+for bp in (images_bp, config_bp, monitor_bp, streams_bp, ipcams_bp, users_bp, web_bp):
     app.register_blueprint(bp)
 auth.init_app(app)
 if not SECRET_KEY:

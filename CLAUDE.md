@@ -21,7 +21,7 @@ Người dùng là sinh viên, giao tiếp bằng **tiếng Việt**. Comment, l
 
 ```powershell
 # Cài đặt
-cd server; pip install -r requirements.txt      # Flask, PyMySQL, cryptography, yt-dlp
+cd server; pip install -r requirements.txt      # Flask, PyMySQL, cryptography, yt-dlp, opencv-python
 cd client; pip install -r requirements.txt      # opencv-python, requests, yt-dlp
 
 # Server (máy này: MySQL80 chạy ở cổng 3307, KHÔNG phải 3306)
@@ -58,13 +58,16 @@ Mỗi chức năng một file — sửa lỗi chức năng nào thì vào đúng
 - `local_store.py`: SQLite WAL `client/data/client.db`, vừa là kho metadata vừa là hàng đợi gửi bù. Mỗi thao tác mở connection riêng (không chia sẻ giữa luồng).
 
 ### Server (`server/`)
-- `Server.py` chỉ tạo Flask app và đăng ký 6 Blueprint: `routes/images.py` (`/api/images…`, `/uploads/…`), `routes/config.py` (`/api/config…`), `routes/monitor.py` (`/api/stats`, `/api/clients`, `/api/cameras`), `routes/streams.py` (`/api/streams…`, camera YouTube), `routes/users.py` (`/api/me`, `/api/users…`), `routes/web.py` (các trang HTML, `/login`).
+- `Server.py` chỉ tạo Flask app và đăng ký 6 Blueprint: `routes/images.py` (`/api/images…`, `/uploads/…`), `routes/config.py` (`/api/config…`), `routes/monitor.py` (`/api/stats`, `/api/clients`, `/api/cameras`), `routes/streams.py` (`/api/streams…`, camera YouTube), `routes/ipcams.py` (`/api/ipcams…`, `/ipcam/<id>/stream`), `routes/users.py` (`/api/me`, `/api/users…`), `routes/web.py` (các trang HTML, `/login`).
 - **Phân quyền** (`auth.py`): `guard()` chạy trước mọi request — **mặc định bắt đăng nhập**, trừ `PUBLIC_ENDPOINTS` (login, static) và `CLIENT_ENDPOINTS` (upload ảnh, lấy config: kiểm tra header `X-API-Key` = `PBL4_API_KEY`). Route chỉ cho admin gắn `@admin_required`. Template có sẵn `current_user`, `is_admin`; JS có `IS_ADMIN` (chỉ để ẩn nút, Server vẫn kiểm tra). Thêm route mới → xác định ai được gọi.
+- **Khách**: `/login/guest` đặt `session['guest']` → `g.user = auth.GUEST` (`id=None`, role `viewer`, `guest: True`); route dùng `g.user['id']` phải chặn khách. `PBL4_ALLOW_GUEST=0` tắt.
+- `ipcam.py`: camera IP → OpenCV (RTSP ép TCP, timeout 6 s) → MJPEG. `StreamHub` giữ 1 `CameraReader` (thread) / camera, người xem chờ khung mới qua `threading.Condition`, không ai xem 20 s thì đóng. URL camera (có mật khẩu) không gửi ra trình duyệt (`mask_url`).
+- Flask tắt debug → **không tự nạp lại template**: sửa `.html` phải khởi động lại Server mới thấy.
 - `youtube.py`: yt-dlp tách id / kiểm tra (`inspect`: live_status, cho nhúng) / tìm livestream (`search_live`). Trang `/live` nhúng `youtube-nocookie.com/embed/<id>`.
 - Module dùng chung: `settings.py` (đường dẫn, `MYSQL_CONFIG`, `CONFIG_LIMITS`, `log`), `timeutil.py` (thời gian), `db.py` (`get_db`, `init_db`, `to_json`, `touch_client`), `storage.py` (`cleanup_old_images`, `remove_file`, `looks_like_image`). Import kiểu tuyệt đối (`from db import get_db`) — chạy từ thư mục `server/`.
 - Mỗi request mở **một kết nối MySQL riêng** (`get_db()`, `DictCursor`) → an toàn với `threaded=True`.
 - `init_db()` (trong `db.py`) được `Server.py` gọi khi import: tạo database, tạo bảng, **tự thêm cột thiếu / nâng `DATETIME` → `DATETIME(3)`** cho DB cũ (qua `information_schema`). Đổi schema thì sửa cả `init_db()`, `schema.sql` và `migrate_sqlite_to_mysql.py`.
-- Bảng: `images`, `config` (đúng 1 dòng id=1), `config_history`, `clients`, `users` (role `admin`/`viewer`, mật khẩu băm), `live_streams` (link YouTube cho trang `/live`). Camera = cột `images.source` (id camera do Client gửi); `clients.cameras` = danh sách id camera Client khai báo (gửi qua `GET /api/config?cameras=`), `/api/cameras` gộp cả hai cho ô chọn camera trên Website.
+- Bảng: `images`, `config` (đúng 1 dòng id=1), `config_history`, `clients`, `users` (role `admin`/`viewer`, mật khẩu băm), `live_streams` (link YouTube cho trang `/live`), `ip_cameras` (camera IP cho trang `/ipcam`). Camera = cột `images.source` (id camera do Client gửi); `clients.cameras` = danh sách id camera Client khai báo (gửi qua `GET /api/config?cameras=`), `/api/cameras` gộp cả hai cho ô chọn camera trên Website.
 - Chống nhận trùng: cùng `(client_id, client_capture_id, capture_time)` → trả lại bản ghi cũ với `duplicate: true`.
 - `cleanup_old_images()` xóa ảnh cũ nhất khi vượt `config.max_images`.
 - Giới hạn tham số cấu hình nằm ở `CONFIG_LIMITS`.

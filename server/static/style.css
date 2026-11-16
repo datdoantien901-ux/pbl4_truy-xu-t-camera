@@ -244,6 +244,7 @@ input[type=password], input[type=url], input[type=search] {
 .user-box form { margin: 0; }
 .logout { background: none; border: 1px solid rgba(255,255,255,.35); color: #fff; border-radius: var(--radius-sm); width: 34px; height: 34px; display: grid; place-items: center; cursor: pointer; }
 .logout:hover { background: rgba(255,255,255,.15); }
+.logout.wide { width: auto; padding: 0 .65rem; font: inherit; font-size: .8rem; font-weight: 600; }
 
 /* ---------- Trang đăng nhập ---------- */
 .login-page { min-height: 100vh; display: grid; place-items: center; padding: 1.5rem 1rem; background: var(--sign); }
@@ -254,6 +255,36 @@ input[type=password], input[type=url], input[type=search] {
 .login-card .field input { width: 100%; }
 .login-card .btn { width: 100%; padding: .7rem 1rem; }
 .login-card .toast { margin: 0; }
+.login-card [hidden] { display: none !important; }
+.login-form { display: flex; flex-direction: column; gap: 1rem; }
+.login-card h1 + .role-choices { margin-top: 1rem; }
+.role-choices { display: flex; flex-direction: column; gap: .75rem; }
+.role-choices form { margin: 0; }
+.role-choice { width: 100%; display: flex; gap: .9rem; align-items: flex-start; text-align: left; padding: 1rem 1.1rem;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.role-choice:hover { border-color: var(--sign); background: var(--sign-tint); }
+.role-choice svg { width: 28px; height: 28px; color: var(--sign); flex-shrink: 0; margin-top: .1rem; }
+.role-choice strong { display: block; font-size: 1rem; }
+.role-choice span span { display: block; font-size: .86rem; color: var(--ink-soft); margin-top: .15rem; }
+
+/* ---------- Camera IP ---------- */
+.ipcam-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 1rem; }
+.ipcam-card { overflow: hidden; }
+.ipcam-frame { position: relative; aspect-ratio: 16 / 9; background: #1e2a33; display: grid; place-items: center; }
+.ipcam-frame img { width: 100%; height: 100%; object-fit: contain; position: absolute; inset: 0; }
+.ipcam-frame .msg { color: #c9d3da; font-size: .9rem; padding: 1rem; text-align: center; position: relative; }
+.ipcam-frame .live-tag { position: absolute; top: .8rem; left: .8rem; z-index: 1; }
+.ipcam-cap { padding: .7rem .9rem; display: flex; justify-content: space-between; align-items: center; gap: .6rem; }
+.ipcam-cap strong { display: block; }
+.ipcam-cap .muted { font-size: .78rem; word-break: break-all; }
+.ipcam-cap .actions { display: flex; gap: .4rem; flex-shrink: 0; }
+.ipcam-cap .btn { padding: .35rem .7rem; font-size: .82rem; }
+.ipcam-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .9rem; align-items: end; padding: 1.1rem 1.25rem; }
+.ipcam-form .wide2 { grid-column: span 2; }
+.ipcam-form .full { grid-column: 1 / -1; }
+.ipcam-form .field input, .ipcam-form .field select { width: 100%; }
+.ipcam-form .form-actions { padding-top: 0; flex-wrap: wrap; }
+.ipcam-preview { max-width: 480px; border-radius: var(--radius-sm); margin-top: .8rem; }
 
 /* ---------- Camera YouTube ---------- */
 .live-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 1.25rem; align-items: start; }
@@ -317,6 +348,8 @@ input[type=password], input[type=url], input[type=search] {
   .live-layout { grid-template-columns: minmax(0, 1fr); }
   .live-grid { grid-template-columns: minmax(0, 1fr); }
   .user-form { grid-template-columns: 1fr; }
+  .ipcam-grid { grid-template-columns: minmax(0, 1fr); }
+  .ipcam-form { grid-template-columns: 1fr 1fr; }
   .content { padding: 1.25rem 1rem 2rem; }
   .setting { grid-template-columns: 1fr; gap: .6rem; }
   .metrics { grid-template-columns: 1fr; }
