@@ -3,7 +3,9 @@
 {% block content %}
 <div class="panel empty">
   <strong>Không đủ quyền</strong>
-  <p>{{ message }}. Tài khoản của bạn chỉ có quyền xem.</p>
-  <a class="btn" href="/">Về trang Ảnh trực tiếp</a>
+  <p>{{ message }}. Bạn đang ở chế độ chỉ xem.</p>
+  <form method="post" action="/logout" style="display:inline"><input type="hidden" name="to" value="admin">
+    <button class="btn btn-primary" type="submit">Đăng nhập quản trị viên</button></form>
+  <a class="btn" href="/live">Về Camera trực tiếp</a>
 </div>
 {% endblock %}

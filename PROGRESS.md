@@ -19,6 +19,7 @@
 | 2026-11-02 | `docs/nhat-ky-chuc-nang` | Tạo `docs/chuc-nang/*.md`: nhật ký + lỗi tồn tại theo từng chức năng; chuyển danh sách lỗi Server/Client từ PROGRESS.md sang đó |
 | 2026-11-10 | `refactor/don-repo` | Bỏ 311 file rác của phiên bản đầu khỏi git (`timestamp/`, `images/`, `client/timestamp/`, `camera_metadata.db`, `client/camera_metadata.db`) — vẫn giữ trên đĩa; thêm vào `.gitignore` |
 | 2026-11-10 | merge `feature/multithread-client` → `main` | Đưa toàn bộ nhánh đa luồng vào `main` (merge `--no-ff`) |
+| 2026-11-16 | `feature/camera-ip` | **Camera IP** (`/ipcam`): nhập IP camera (theo hãng hoặc URL) → Server đọc bằng OpenCV, phát MJPEG cho trình duyệt, 1 luồng đọc / camera dùng chung. **Đăng nhập chọn vai trò**: Người xem vào thẳng không mật khẩu (chỉ xem), Quản trị viên nhập mật khẩu. Menu: Camera trực tiếp (trang mặc định), Camera IP, Ảnh từ Client. Test với camera giả MJPEG + MySQL thật, 51 kiểm thử phân quyền cũ vẫn đạt |
 | 2026-11-16 | `feature/phan-quyen` | **Phân quyền**: Client xác thực bằng khóa API (`X-API-Key`); Website bắt đăng nhập, 2 quyền admin / viewer, trang Người dùng + Tài khoản. **Camera YouTube** (`/live`): xem livestream ngay trên web (1 lớn hoặc lưới), admin thêm link / tìm livestream đang phát bằng yt-dlp; nạp sẵn 10 camera mẫu. Đã test 51 trường hợp phân quyền + API stream với MySQL thật (cổng 5055), Client thật (khóa đúng / sai / gửi bù), chụp màn hình Chrome headless; dọn dữ liệu thử |
 | 2026-11-02 | 9 nhánh `refactor/*` + `docs/cau-truc-module`, merge `--no-ff` vào `feature/multithread-client` | Tách code theo chức năng, không đổi hành vi. Server: `settings`, `timeutil`, `db`, `storage`, `routes/{images,config,monitor,web}` (Blueprint). Client: `settings`, `shared_config`, `capture_thread`, `upload_thread`, `config_thread`. `migrate_sqlite_to_mysql.py` import trực tiếp `db`/`settings`/`timeutil` |
 
@@ -49,7 +50,7 @@
 | 8 | Báo cáo minh chứng + tài liệu cài đặt, cấu hình mạng, triển khai | 10 | 5 | README: cài đặt, chạy, mô hình mạng, REST API, nguồn video. **Chưa có báo cáo minh chứng kiểm thử** |
 | | **Tổng phần bắt buộc** | **100** | **75** | |
 | N1 | Phát hiện chuyển động / nhận diện khuôn mặt (OpenCV) | — | ✗ | Chưa làm |
-| N2 | Live streaming trên Website | — | ½ | Trang *Camera YouTube* phát trực tiếp livestream YouTube (nhúng). Camera của Client vẫn chỉ là ảnh tĩnh làm mới mỗi 2 giây (chưa có MJPEG stream từ Client) |
+| N2 | Live streaming trên Website | — | ✓ | Camera trực tiếp (YouTube nhúng) + **Camera IP**: Server đọc RTSP/HTTP bằng OpenCV, phát MJPEG lên Website. Chưa thử với camera IP thật |
 | N3 | Cảnh báo email khi có chuyển động | — | ✗ | Chưa làm |
 
 ### Số liệu đo thật (30 ảnh YouTube gần nhất, MySQL, 2026-11-02)
@@ -62,7 +63,7 @@
 
 Theo thứ tự ưu tiên để tăng % đáp ứng đề tài:
 
-1. **Camera thật (bước 1–3, 7):** xác định loại camera nhà → điền `CAMERA_NHA_URL` trong `client/.env`. Không có camera IP → dùng điện thoại (IP Webcam / OctoStream) làm camera. Chụp minh chứng: sơ đồ LAN, IP camera trên router, ONVIF Device Manager / nmap, VLC mở được RTSP.
+1. **Camera thật (bước 1–3, 7):** (thử nhanh link ở trang *Camera IP*: nhập IP → Thử kết nối) xác định loại camera nhà → điền `CAMERA_NHA_URL` trong `client/.env`. Không có camera IP → dùng điện thoại (IP Webcam / OctoStream) làm camera. Chụp minh chứng: sơ đồ LAN, IP camera trên router, ONVIF Device Manager / nmap, VLC mở được RTSP.
 2. **ONVIF (bước 2):** thêm công cụ nhỏ dò camera + lấy RTSP URI qua ONVIF (vd thư viện `onvif-zeep`, WS-Discovery) — hoặc tối thiểu minh chứng bằng ONVIF Device Manager.
 3. **Báo cáo kiểm thử (bước 7–8):** chạy kịch bản có ghi lại — E2E, đổi interval 5s → 2s trên Website (ảnh log Client + `config_history`), tắt/bật Server (gửi bù), đo độ trễ khi mở sẵn trang gallery; chụp màn hình các trang. Đặt trong `docs/bao-cao/`.
 4. (Nâng cao, nếu còn thời gian) phát hiện chuyển động bằng OpenCV (frame differencing) — dễ nhất trong 3 mục nâng cao.

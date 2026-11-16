@@ -4,9 +4,10 @@ Xác thực và phân quyền.
 Hai lớp bảo vệ:
   1. Client (máy chụp ảnh) → khóa API: gửi header  X-API-Key: <PBL4_API_KEY>
      Áp dụng cho POST /api/images (gửi ảnh) và GET /api/config (lấy cấu hình).
-  2. Người dùng Website → đăng nhập (cookie phiên Flask, mật khẩu băm bằng werkzeug):
-       viewer  xem ảnh, xem camera YouTube, xem thống kê
-       admin   như viewer + xóa ảnh, đổi cấu hình, quản lý người dùng, thêm/xóa camera YouTube
+  2. Người dùng Website chọn ở trang /login:
+       Người xem (khách)  vào thẳng, không cần mật khẩu, CHỈ XEM (role 'viewer', không có tài khoản)
+       Quản trị viên      đăng nhập bằng mật khẩu (băm bằng werkzeug), làm được mọi chức năng
+     (tài khoản role 'viewer' trong bảng users vẫn dùng được; PBL4_ALLOW_GUEST=0 tắt chế độ khách)
 
 Chính sách "mặc định từ chối": guard() chạy trước MỌI request, route nào không nằm trong
 PUBLIC_ENDPOINTS đều phải đăng nhập (hoặc có khóa API với route của Client).
@@ -20,10 +21,11 @@ from functools import wraps
 from flask import g, jsonify, redirect, render_template, request, session, url_for
 
 from db import get_db
-from settings import API_KEY, LOGIN_LOCK_SECONDS, LOGIN_MAX_FAILS, log
+from settings import ALLOW_GUEST, API_KEY, LOGIN_LOCK_SECONDS, LOGIN_MAX_FAILS, log
 
 ROLES = ('admin', 'viewer')
-PUBLIC_ENDPOINTS = {'web.page_login', 'web.do_login', 'static'}
+PUBLIC_ENDPOINTS = {'web.page_login', 'web.do_login', 'web.guest_login', 'static'}
+GUEST = {'id': None, 'username': 'Khách', 'role': 'viewer', 'guest': True}
 CLIENT_ENDPOINTS = {('POST', 'images.upload_image'), ('GET', 'config.get_config')}
 
 
@@ -41,6 +43,11 @@ def client_key_status():
 
 # ============ NGƯỜI DÙNG ĐANG ĐĂNG NHẬP ============
 def _load_user():
+    if session.get('guest'):
+        if ALLOW_GUEST:
+            return GUEST
+        session.clear()   # admin vừa tắt chế độ khách
+        return None
     uid = session.get('uid')
     if uid is None:
         return None
@@ -61,7 +68,7 @@ def _is_api():
 
 def deny(status, message):
     """API → JSON; trang web → chuyển tới trang đăng nhập (401) hoặc trang báo không đủ quyền (403)."""
-    if _is_api() or request.path.startswith('/uploads/'):
+    if _is_api() or request.path.startswith(('/uploads/', '/ipcam/')):
         return jsonify({'error': message}), status
     if status == 401:
         return redirect(url_for('web.page_login', next=request.full_path.rstrip('?')))
@@ -98,7 +105,7 @@ def admin_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         if g.get('user') is None or g.user['role'] != 'admin':
-            return deny(403, 'Chỉ quản trị viên (admin) được làm việc này')
+            return deny(403, 'Chỉ quản trị viên được làm việc này')
         return f(*args, **kwargs)
     return wrapper
 
