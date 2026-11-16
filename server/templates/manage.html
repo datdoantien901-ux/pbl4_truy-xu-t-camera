@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>Quản lý ảnh</h1>
-    <p>Tìm ảnh theo camera, khoảng thời gian chụp, tên file hoặc tên Client, xem chi tiết và xóa ảnh không cần.</p>
+    <p>Tìm ảnh theo camera, khoảng thời gian chụp, tên file hoặc tên Client, xem chi tiết{% if is_admin %} và xóa ảnh không cần{% endif %}.</p>
   </div>
 </div>
 
@@ -20,13 +20,13 @@
 
 <div class="bar">
   <span id="summary" class="muted"></span>
-  <button class="btn btn-danger" id="delSelected" disabled>Xóa ảnh đã chọn</button>
+  {% if is_admin %}<button class="btn btn-danger" id="delSelected" disabled>Xóa ảnh đã chọn</button>{% endif %}
 </div>
 
 <div class="panel table-wrap">
   <table class="data">
     <thead>
-      <tr><th><input type="checkbox" id="all" aria-label="Chọn tất cả"></th><th>Ảnh</th><th>Số</th><th>Chụp lúc</th>
+      <tr><th>{% if is_admin %}<input type="checkbox" id="all" aria-label="Chọn tất cả">{% endif %}</th><th>Ảnh</th><th>Số</th><th>Chụp lúc</th>
           <th>Camera</th><th>Client</th><th class="num">Dung lượng</th><th class="num">Độ phân giải</th><th></th></tr>
     </thead>
     <tbody id="rows"></tbody>
@@ -59,7 +59,7 @@ async function load(p = 1) {
 
   for (const it of data.items) {
     tbody.append(el('tr', {},
-      el('td', {}, el('input', {type: 'checkbox', class: 'pick', value: it.id, onchange: updateBtn,
+      el('td', {}, IS_ADMIN && el('input', {type: 'checkbox', class: 'pick', value: it.id, onchange: updateBtn,
                                 'aria-label': `Chọn ảnh #${it.id}`})),
       el('td', {}, el('a', {href: `/image/${it.id}`},
         el('img', {src: '/' + it.file_path, class: 'mini', alt: `Ảnh #${it.id}`, loading: 'lazy'}))),
@@ -71,10 +71,9 @@ async function load(p = 1) {
       el('td', {class: 'num'}, it.width && it.height ? `${it.width} × ${it.height}` : '—'),
       el('td', {}, el('div', {class: 'row-actions'},
         el('a', {class: 'btn', href: `/image/${it.id}`}, 'Xem'),
-        el('button', {class: 'btn btn-danger', onclick: () => del([it.id])}, 'Xóa')))));
+        IS_ADMIN && el('button', {class: 'btn btn-danger', onclick: () => del([it.id])}, 'Xóa')))));
   }
-  document.getElementById('all').checked = false;
-  updateBtn();
+  if (IS_ADMIN) { document.getElementById('all').checked = false; updateBtn(); }
 
   const pager = document.getElementById('pager');
   pager.replaceChildren();
@@ -105,11 +104,13 @@ camSelect.onchange = () => { cameraToUrl(camSelect.value); load(1); };   // đ�
 
 form.addEventListener('submit', (e) => { e.preventDefault(); load(1); });
 document.getElementById('reset').onclick = () => { form.reset(); camSelect.value = ''; cameraToUrl(''); load(1); };
-document.getElementById('all').onchange = (e) => {
-  document.querySelectorAll('.pick').forEach(c => c.checked = e.target.checked);
-  updateBtn();
-};
-document.getElementById('delSelected').onclick = () => del(picked());
+if (IS_ADMIN) {
+  document.getElementById('all').onchange = (e) => {
+    document.querySelectorAll('.pick').forEach(c => c.checked = e.target.checked);
+    updateBtn();
+  };
+  document.getElementById('delSelected').onclick = () => del(picked());
+}
 fillCameraSelect(camSelect, cameraFromUrl()).then(() => load(1));   // điền ô chọn xong mới lọc
 </script>
 {% endblock %}

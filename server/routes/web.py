@@ -1,22 +1,92 @@
 """
 Các trang web (template trong server/templates/):
-    /             gallery real-time
-    /manage       quản lý ảnh
-    /config       cấu hình Client từ xa
-    /stats        thống kê độ trễ
-    /image/<id>   chi tiết 1 ảnh
+    /login        đăng nhập                 (công khai)
+    /logout       đăng xuất (POST)
+    /             gallery real-time         (đăng nhập)
+    /live         camera YouTube trực tiếp  (đăng nhập)
+    /manage       quản lý ảnh               (đăng nhập; nút xóa chỉ admin thấy)
+    /stats        thống kê độ trễ           (đăng nhập)
+    /image/<id>   chi tiết 1 ảnh            (đăng nhập)
+    /account      tài khoản, đổi mật khẩu   (đăng nhập)
+    /config       cấu hình Client từ xa     (admin)
+    /users        quản lý người dùng        (admin)
 """
-from flask import Blueprint, abort, render_template
+from urllib.parse import urlparse
 
+from flask import Blueprint, abort, g, redirect, render_template, request, session
+from werkzeug.security import check_password_hash
+
+from auth import admin_required, login_failed, login_locked, login_succeeded
 from db import get_db, to_json
-from timeutil import seconds_between
+from settings import log
+from timeutil import now_dt, seconds_between
 
 web_bp = Blueprint('web', __name__)
+
+
+def _safe_next(url):
+    """Chỉ cho chuyển về đường dẫn nội bộ (/...), chặn chuyển hướng sang trang lạ (open redirect)."""
+    if url and url.startswith('/') and not url.startswith('//') and not urlparse(url).netloc:
+        return url
+    return '/'
+
+
+@web_bp.route('/login', methods=['GET'])
+def page_login():
+    if session.get('uid'):
+        return redirect('/')
+    return render_template('login.html', next=_safe_next(request.args.get('next')))
+
+
+@web_bp.route('/login', methods=['POST'])
+def do_login():
+    ip = request.remote_addr
+    username = (request.form.get('username') or '').strip()
+    next_url = _safe_next(request.form.get('next'))
+
+    wait = login_locked(ip)
+    if wait:
+        return render_template('login.html', next=next_url, username=username,
+                               error=f'Sai mật khẩu quá nhiều lần. Thử lại sau {wait} giây.'), 429
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT id, username, password_hash, role FROM users WHERE username = %s', (username,))
+    user = cur.fetchone()
+    if user is None or not check_password_hash(user['password_hash'], request.form.get('password') or ''):
+        conn.close()
+        login_failed(ip)
+        log.warning('[AUTH] Đăng nhập sai: "%s" từ %s', username, ip)
+        return render_template('login.html', next=next_url, username=username,
+                               error='Sai tên đăng nhập hoặc mật khẩu.'), 401
+    cur.execute('UPDATE users SET last_login = %s WHERE id = %s', (now_dt(), user['id']))
+    conn.commit()
+    conn.close()
+
+    login_succeeded(ip)
+    session.clear()             # cấp phiên mới → chống chiếm phiên (session fixation)
+    session.permanent = True    # hết hạn sau SESSION_HOURS
+    session['uid'] = user['id']
+    session['role'] = user['role']
+    log.info('[AUTH] %s (%s) đăng nhập từ %s', user['username'], user['role'], ip)
+    return redirect(next_url)
+
+
+@web_bp.route('/logout', methods=['POST'])
+def logout():
+    log.info('[AUTH] %s đăng xuất', g.user['username'])
+    session.clear()
+    return redirect('/login')
 
 
 @web_bp.route('/')
 def page_index():
     return render_template('index.html')
+
+
+@web_bp.route('/live')
+def page_live():
+    return render_template('live.html')
 
 
 @web_bp.route('/manage')
@@ -25,8 +95,20 @@ def page_manage():
 
 
 @web_bp.route('/config')
+@admin_required
 def page_config():
     return render_template('config.html')
+
+
+@web_bp.route('/account')
+def page_account():
+    return render_template('account.html')
+
+
+@web_bp.route('/users')
+@admin_required
+def page_users():
+    return render_template('users.html')
 
 
 @web_bp.route('/stats')

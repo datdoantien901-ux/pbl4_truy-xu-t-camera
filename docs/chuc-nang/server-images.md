@@ -1,6 +1,6 @@
 # Server — API ảnh và lưu trữ file
 
-> Mã chức năng: `server-images` · Nhánh sửa lỗi: `fix/server-images` · Cập nhật lần cuối: **2026-11-02**
+> Mã chức năng: `server-images` · Nhánh sửa lỗi: `fix/server-images` · Cập nhật lần cuối: **2026-11-16**
 
 Nhận ảnh từ Client (`POST /api/images`, chống nhận trùng), liệt kê / lọc / phân trang, chi tiết, xóa, đánh dấu đã hiển thị; lưu file vào `server/uploads/`, dọn ảnh cũ khi vượt `max_images`.
 
@@ -20,5 +20,6 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-16 | `feature/phan-quyen` | Tính năng | `DELETE /api/images/<id>` chỉ admin (`@admin_required`), log ghi tên người xóa. `POST /api/images` cần khóa API (kiểm tra trong `auth.guard`); `/uploads/` cần đăng nhập | routes/images.py |
 | 2026-11-02 | `feature/web-camera-filter` | Tính năng | `GET /api/images?camera=<id>` lọc theo cột `source` | routes/images.py |
 | 2026-11-02 | `refactor/server-images` · `dcfa5db` | Tái cấu trúc | Tách API ảnh ra `routes/images.py` (Blueprint `images`), xử lý file ra `storage.py` | routes/images.py, storage.py, Server.py |

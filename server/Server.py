@@ -9,7 +9,11 @@ Mỗi chức năng nằm ở một file riêng:
     routes/images.py    API ảnh       /api/images..., /uploads/<file>
     routes/config.py    API cấu hình  /api/config, /api/config/history
     routes/monitor.py   API giám sát  /api/stats, /api/clients
-    routes/web.py       trang web     /  /manage  /config  /stats  /image/<id>
+    routes/web.py       trang web     /login  /  /live  /manage  /config  /users  /stats  /image/<id>
+    routes/streams.py   API camera YouTube  /api/streams...
+    routes/users.py     API tài khoản /api/me, /api/users...
+    auth.py             đăng nhập (admin / viewer) + khóa API của Client
+    youtube.py          kiểm tra / tìm livestream YouTube bằng yt-dlp
 
 CSDL: MySQL, cấu hình qua biến môi trường MYSQL_HOST, MYSQL_PORT, MYSQL_USER,
       MYSQL_PASSWORD, MYSQL_DATABASE (database và bảng tự tạo khi chạy).
@@ -18,22 +22,35 @@ Chạy:  python Server.py               (mặc định lắng nghe 0.0.0.0:5000,
        PBL4_PORT=8000 python Server.py
 """
 import os
+import secrets
+from datetime import timedelta
 
 from flask import Flask
-from flask_cors import CORS
 
+import auth
 from db import init_db
 from routes.config import config_bp
 from routes.images import images_bp
 from routes.monitor import monitor_bp
+from routes.streams import streams_bp
+from routes.users import users_bp
 from routes.web import web_bp
-from settings import MAX_CONTENT_LENGTH, log
+from settings import MAX_CONTENT_LENGTH, SECRET_KEY, SESSION_HOURS, log
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
-CORS(app)
-for bp in (images_bp, config_bp, monitor_bp, web_bp):
+app.config.update(
+    MAX_CONTENT_LENGTH=MAX_CONTENT_LENGTH,
+    SECRET_KEY=SECRET_KEY or secrets.token_hex(32),   # khóa ký cookie phiên đăng nhập
+    SESSION_COOKIE_HTTPONLY=True,     # JavaScript không đọc được cookie phiên
+    SESSION_COOKIE_SAMESITE='Lax',    # trang web lạ không gửi kèm cookie khi POST/DELETE (chống CSRF)
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=SESSION_HOURS),
+)
+# Không bật CORS: Website và API cùng một địa chỉ, trang web khác không được gọi API bằng phiên đăng nhập
+for bp in (images_bp, config_bp, monitor_bp, streams_bp, users_bp, web_bp):
     app.register_blueprint(bp)
+auth.init_app(app)
+if not SECRET_KEY:
+    log.warning('[AUTH] Chưa đặt PBL4_SECRET_KEY → mỗi lần khởi động lại Server phải đăng nhập lại')
 
 # Khởi tạo DB ngay khi import (chạy được cả bằng `python Server.py` lẫn `flask run`)
 init_db()

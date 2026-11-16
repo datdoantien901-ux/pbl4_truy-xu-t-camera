@@ -43,18 +43,18 @@
 
     <div class="detail-actions">
       <a class="btn" href="/{{ image.file_path }}" download>Tải ảnh</a>
-      <button class="btn btn-danger" id="del">Xóa ảnh</button>
+      {% if is_admin %}<button class="btn btn-danger" id="del">Xóa ảnh</button>{% endif %}
     </div>
   </aside>
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
-document.getElementById('del').onclick = async () => {
+document.getElementById('del')?.addEventListener('click', async () => {
   if (!confirm('Xóa ảnh #{{ image.id }}?')) return;
   const r = await fetch('/api/images/{{ image.id }}', {method: 'DELETE'});
   if (r.ok) location.href = '/manage';
   else alert('Chưa xóa được ảnh (lỗi ' + r.status + ').');
-};
+});
 </script>
 {% endblock %}
