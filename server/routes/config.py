@@ -1,6 +1,6 @@
 """
 API cấu hình từ xa:
-    GET    /api/config                 Client định kỳ gọi (khóa API) / Website đọc (đăng nhập)
+    GET    /api/config                 Client định kỳ gọi (khóa API; kèm "cameras" cần chụp) / Website đọc
     POST   /api/config                 admin thiết lập tham số (giới hạn trong CONFIG_LIMITS)
     GET    /api/config/history         lịch sử thay đổi cấu hình (admin)
 """
@@ -10,6 +10,7 @@ from flask import Blueprint, g, jsonify, request
 
 from auth import admin_required
 
+from camera_sources import capture_list
 from db import get_db, to_json, touch_client
 from settings import CONFIG_LIMITS, log
 from storage import cleanup_old_images
@@ -34,6 +35,9 @@ def get_config():
     row = to_json(cur.fetchone())
     if g.is_client:   # chỉ ghi nhận Client thật (có khóa API), không ghi khi trang Cấu hình gọi
         touch_client(cur, request.args.get('client_id'), 'config_poll', _camera_list(request.args.get('cameras')))
+        # Camera Client cần chụp (admin bật "Client chụp ảnh" ở Camera trực tiếp / Camera IP).
+        # Có URL (camera IP có thể kèm mật khẩu) → chỉ gửi cho Client có khóa API, không gửi cho trình duyệt
+        row['cameras'] = capture_list(cur, with_url=True)
     conn.commit()
     conn.close()
     return jsonify(row)

@@ -4,8 +4,10 @@ Cấu hình chung của Client: đường dẫn, cấu hình mặc định, đ�
 Thứ tự ưu tiên cấu hình: DEFAULT_SETTINGS < client_config.json < biến môi trường (CAMERA_URL,
 PBL4_API_KEY, url_env của từng camera, đọc cả từ client/.env) < tham số dòng lệnh.
 
-Nhiều camera: khai báo mảng "cameras" trong client_config.json, mỗi camera chạy một luồng chụp
-riêng. Không có "cameras" (hoặc truyền --source-type / --source-url) → 1 camera từ "source".
+Camera cần chụp: mặc định ("cameras_from_server": true) lấy từ Website — các camera admin bật
+"Client chụp ảnh" ở mục Camera trực tiếp / Camera IP (xem camera_manager.py).
+"cameras_from_server": false → dùng mảng "cameras" trong client_config.json như trước; không có
+"cameras" (hoặc truyền --source-type / --source-url) → 1 camera từ "source".
 """
 import copy
 import json
@@ -36,6 +38,10 @@ DEFAULT_SETTINGS = {
     'api_key': '',   # khóa API gửi kèm header X-API-Key; nên đặt PBL4_API_KEY trong client/.env
     'capture': {'capture_interval': 5, 'jpeg_quality': 80, 'resize_width': 854},
     'config_poll_interval': 10,
+    # true: chụp các camera admin bật "Client chụp ảnh" trên Website (Camera trực tiếp / Camera IP),
+    #       danh sách nhận qua /api/config, thêm / bớt lúc đang chạy
+    # false: chụp các camera trong mảng "cameras" của file này (cách cũ)
+    'cameras_from_server': True,
     'upload_enabled': True,
     'upload_queue_size': 50,
     'show_preview': True,
@@ -106,6 +112,7 @@ def load_settings(args):
         settings['source']['url'] = args.source_url
     if args.source_type or args.source_url:
         settings['cameras'] = None   # chỉ định nguồn trên dòng lệnh → chạy đúng 1 camera đó
+        settings['cameras_from_server'] = False
     if args.server:
         settings['server_url'] = args.server
     if args.no_preview:
