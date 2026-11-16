@@ -25,6 +25,7 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-16 | `fix/client-dong-cua-so` | Sửa lỗi | Người dùng báo "Ảnh từ Client không chụp được video trực tiếp": thực ra Client chụp đủ (12 ảnh) nhưng **tự dừng khi đóng cửa sổ xem trước** (`Cửa sổ đã đóng. Thoát...`). Sửa: đóng cửa sổ chỉ tắt xem trước, Client vẫn chụp + gửi; dừng bằng `q` hoặc Ctrl+C | Client.py |
 | 2026-11-16 | `feature/client-chup-tu-web` | Tính năng | Client chụp **các camera admin bật trên Website** (`cameras_from_server`, mặc định true): `CameraManager` mở / dừng `CaptureThread` khi danh sách đổi (mỗi luồng 1 `Event` dừng riêng), không cần khởi động lại; preview chịu được danh sách camera thay đổi (chờ danh sách → màn hình "Dang cho..."). Đã test với Client thật: bật Hà Nội + camera IP → ~25 s sau 2 luồng mới chụp; tắt Nguyễn Huệ → dừng đúng luồng đó sau 3 s, 2 luồng kia vẫn chạy | Client.py, camera_manager.py (mới), settings.py, client_config.json |
 | 2026-11-16 | `feature/phan-quyen` | Tính năng | Cấu hình `api_key` (mặc định rỗng), lấy từ `PBL4_API_KEY` trong `client/.env` | settings.py, .env.example |
 | 2026-11-02 | `feature/web-camera-filter` | Tính năng | `load_cameras()` trả về thêm danh sách id camera khai báo (để ConfigThread báo cho Server) | settings.py, Client.py |
