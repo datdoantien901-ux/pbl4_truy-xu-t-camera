@@ -13,12 +13,13 @@ Các trang web (template trong server/templates/):
     /config       cấu hình Client từ xa     (admin)
     /users        quản lý người dùng        (admin)
 """
+import time
 from urllib.parse import quote, urlparse
 
 from flask import Blueprint, abort, g, redirect, render_template, request, session
 from werkzeug.security import check_password_hash
 
-from auth import admin_required, login_failed, login_locked, login_succeeded
+from auth import _load_user, admin_required, login_failed, login_locked, login_succeeded
 from db import get_db, to_json
 from settings import ALLOW_GUEST, log
 from timeutil import now_dt, seconds_between
@@ -35,10 +36,9 @@ def _safe_next(url):
 
 @web_bp.route('/login', methods=['GET'])
 def page_login():
-    if session.get('uid') or (session.get('guest') and ALLOW_GUEST):
-        return redirect('/live')
+    # Đang có phiên → vẫn hiện màn hình chọn vai trò, kèm nút "Tiếp tục" (không tự vào thẳng)
     return render_template('login.html', next=_safe_next(request.args.get('next')),
-                           allow_guest=ALLOW_GUEST, mode=request.args.get('mode'))
+                           allow_guest=ALLOW_GUEST, mode=request.args.get('mode'), current=_load_user())
 
 
 @web_bp.route('/login/guest', methods=['POST'])
@@ -47,8 +47,8 @@ def guest_login():
     if not ALLOW_GUEST:
         return redirect('/login?mode=admin')
     session.clear()
-    session.permanent = True
     session['guest'] = True
+    session['t'] = time.time()
     log.info('[AUTH] Khách (chỉ xem) vào từ %s', request.remote_addr)
     return redirect(_safe_next(request.form.get('next')))
 
@@ -80,7 +80,9 @@ def do_login():
 
     login_succeeded(ip)
     session.clear()             # cấp phiên mới → chống chiếm phiên (session fixation)
-    session.permanent = True    # hết hạn sau SESSION_HOURS
+    # Cookie phiên (không đặt permanent) → đóng trình duyệt là phải chọn vai trò lại;
+    # đồng thời Server tự hủy phiên sau SESSION_HOURS (kiểm tra session['t'] trong auth._load_user)
+    session['t'] = time.time()
     session['uid'] = user['id']
     session['role'] = user['role']
     log.info('[AUTH] %s (%s) đăng nhập từ %s', user['username'], user['role'], ip)
@@ -97,9 +99,12 @@ def logout():
 
 @web_bp.route('/')
 def page_index():
-    """Trang ảnh từ Client đã gộp vào Camera trực tiếp (tab "Ảnh từ Client"); giữ ?camera= nếu có."""
+    """Vào trang chủ → luôn hỏi vai trò (Người xem / Quản trị viên).
+    Link cũ /?camera=... (trang ảnh trước đây) → tab "Ảnh từ Client"."""
     cam = request.args.get('camera')
-    return redirect('/live?tab=anh' + (f'&camera={quote(cam)}' if cam else ''))
+    if cam:
+        return redirect('/live?tab=anh&camera=' + quote(cam))
+    return redirect('/login')
 
 
 @web_bp.route('/live')

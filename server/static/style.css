@@ -257,6 +257,8 @@ input[type=password], input[type=url], input[type=search] {
 .login-card .toast { margin: 0; }
 .login-card [hidden] { display: none !important; }
 .login-form { display: flex; flex-direction: column; gap: 1rem; }
+.continue-box { display: flex; align-items: center; justify-content: space-between; gap: .8rem; flex-wrap: wrap;
+  padding: .8rem 1rem; border-radius: var(--radius-sm); background: var(--ok-tint); font-size: .9rem; }
 .login-card h1 + .role-choices { margin-top: 1rem; }
 .role-choices { display: flex; flex-direction: column; gap: .75rem; }
 .role-choices form { margin: 0; }
@@ -274,6 +276,19 @@ input[type=password], input[type=url], input[type=search] {
 .tab:hover { color: var(--ink); }
 .tab.active { color: var(--sign); border-bottom-color: var(--sign); }
 .tab-bar { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+
+.photo-main { min-width: 0; }
+.photo-main .section-title { margin-top: 1.5rem; }
+.latest.compact { grid-template-columns: 1fr; }
+.latest.compact .latest-info { border-left: 0; border-top: 1px solid var(--line); display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 1rem 2rem; }
+.latest.compact .latest-info .empty { grid-column: 1 / -1; }
+.latest.compact .facts { grid-template-columns: repeat(2, auto minmax(0, 1fr)); gap: .35rem 1rem; }
+.latest.compact .facts dd { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.latest.compact .latest-info .btn { margin-top: 0; }
+.thumb-empty { width: 112px; aspect-ratio: 16 / 9; border-radius: var(--radius-sm); background: #dfe5e9;
+  color: var(--ink-soft); font-size: .72rem; display: grid; place-items: center; }
+.dot-live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: .35rem; vertical-align: middle; }
 
 /* ---------- Camera IP ---------- */
 .ipcam-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 1rem; }
@@ -340,6 +355,9 @@ input[type=password], input[type=url], input[type=search] {
 /* ---------- Màn hình nhỏ ---------- */
 @media (max-width: 1100px) {
   .latest, .detail, .config-grid, .live-layout, .admin-tools { grid-template-columns: 1fr; }
+  .latest.compact .latest-info { grid-template-columns: 1fr; }
+  .latest.compact .facts { grid-template-columns: auto 1fr; }
+  #tab-anh .stream-list { order: -1; max-height: 15rem; }   /* màn hình hẹp: chọn nguồn ở trên, ảnh ở dưới */
   .stream-list { max-height: 26rem; }
   .user-form { grid-template-columns: 1fr 1fr; }
   .latest-info { border-left: 0; border-top: 1px solid var(--line); }
