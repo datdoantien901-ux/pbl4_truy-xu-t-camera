@@ -3,9 +3,9 @@ Các trang web (template trong server/templates/):
     /login        đăng nhập                 (công khai)
     /logout       đăng xuất (POST)
     /login/guest  vào chế độ khách (chỉ xem) (POST, công khai)
-    /live         camera trực tiếp (YouTube) — trang mặc định
+    /live         camera trực tiếp — trang mặc định, 2 tab: video YouTube | ảnh từ Client (?tab=anh)
     /ipcam        camera IP: nhập IP → xem trực tiếp (MJPEG qua Server)
-    /             ảnh Client gửi lên (gallery real-time)
+    /             chuyển về /live?tab=anh (trang ảnh cũ đã gộp vào Camera trực tiếp)
     /manage       quản lý ảnh               (đăng nhập; nút xóa chỉ admin thấy)
     /stats        thống kê độ trễ           (đăng nhập)
     /image/<id>   chi tiết 1 ảnh            (đăng nhập)
@@ -13,7 +13,7 @@ Các trang web (template trong server/templates/):
     /config       cấu hình Client từ xa     (admin)
     /users        quản lý người dùng        (admin)
 """
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from flask import Blueprint, abort, g, redirect, render_template, request, session
 from werkzeug.security import check_password_hash
@@ -97,7 +97,9 @@ def logout():
 
 @web_bp.route('/')
 def page_index():
-    return render_template('index.html')
+    """Trang ảnh từ Client đã gộp vào Camera trực tiếp (tab "Ảnh từ Client"); giữ ?camera= nếu có."""
+    cam = request.args.get('camera')
+    return redirect('/live?tab=anh' + (f'&camera={quote(cam)}' if cam else ''))
 
 
 @web_bp.route('/live')
