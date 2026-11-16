@@ -4,6 +4,7 @@ API livestream YouTube (trang /live "Camera YouTube"):
     POST   /api/streams                thêm link {url, title?} — Server kiểm tra   (admin)
     DELETE /api/streams/<id>           xóa                                          (admin)
     PATCH  /api/streams/<id>           {capture: true/false} bật/tắt Client chụp ảnh (admin)
+    POST   /api/streams/<id>/select    chọn camera Client chụp (chỉ camera này)        (admin)
     GET    /api/streams/search?q=...   tìm livestream đang phát trên YouTube       (admin)
     GET    /api/streams/<id>/check     kiểm tra link còn phát không                 (đăng nhập)
 """
@@ -103,6 +104,26 @@ def set_capture(stream_id):
         return jsonify({'error': 'Không tìm thấy'}), 404
     log.info('[STREAM] %s %s chụp ảnh từ %s', g.user['username'], 'BẬT' if data['capture'] else 'TẮT', row['video_id'])
     return jsonify(to_json(row))
+
+
+@streams_bp.route('/api/streams/<int:stream_id>/select', methods=['POST'])
+@admin_required
+def select_for_capture(stream_id):
+    """Admin chọn camera này ở trang Camera trực tiếp → Client chuyển sang chụp ĐÚNG camera này
+    (tắt chụp các livestream khác). Client nhận thay đổi ở lần hỏi /api/config kế tiếp (≤ 10 giây)."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM live_streams WHERE id = %s', (stream_id,))
+    row = cur.fetchone()
+    if row is None:
+        conn.close()
+        return jsonify({'error': 'Không tìm thấy'}), 404
+    changed = cur.execute('UPDATE live_streams SET capture = (id = %s)', (stream_id,))
+    conn.commit()
+    conn.close()
+    if changed:
+        log.info('[STREAM] %s chọn camera %s (%s) cho Client chụp', g.user['username'], row['video_id'], row['title'])
+    return jsonify({'id': stream_id, 'video_id': row['video_id'], 'capture': 1})
 
 
 @streams_bp.route('/api/streams/<int:stream_id>/check', methods=['GET'])

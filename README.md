@@ -121,7 +121,7 @@ Sửa `client/client_config.json` (danh sách camera, địa chỉ server), rồ
 Chép `client/.env.example` thành `client/.env` và điền `PBL4_API_KEY` **trùng với Server**. Sai hoặc thiếu khóa thì Server trả `401`; Client ghi lỗi vào log và giữ ảnh lại để gửi bù khi sửa xong khóa.
 
 **Client chụp camera nào?** Mặc định (`"cameras_from_server": true` trong `client_config.json`) Client chụp **các camera trên Website được admin bật "Client chụp ảnh"**:
-- mục *Camera trực tiếp* → chọn camera → nút **Cho Client chụp ảnh** (camera đang chụp có nhãn *Client đang chụp*),
+- mục *Camera trực tiếp* → **chọn camera** (quản trị viên chọn camera nào thì Client chụp camera đó; camera đang chụp có nhãn *Client đang chụp*),
 - mục *Camera IP* → nút **Chụp ảnh** trên từng camera.
 
 Client hỏi Server mỗi 10 giây (cùng lúc lấy cấu hình), nên bật / tắt trên Website thì khoảng 10 giây sau Client tự mở / dừng luồng chụp, **không cần khởi động lại Client**. Ảnh gửi lên mang id camera (`yt-<video id>`, `ip-<số>`), tab *Ảnh từ Client* hiện đúng tên camera. Muốn dùng danh sách camera tự khai báo như trước: đặt `"cameras_from_server": false` (dùng mảng `"cameras"`), hoặc chạy với `--source-type/--source-url`.
@@ -217,9 +217,11 @@ Trang đăng nhập cho chọn vai trò trước:
 
 ## Camera trực tiếp (`/live`)
 
-Trang mặc định sau khi vào, có 2 tab:
-- **Video trực tiếp**: livestream YouTube (mô tả bên dưới).
-- **Ảnh từ Client** (`/live?tab=anh`): gallery real-time ảnh Client gửi lên — khung hình mới nhất + độ trễ chụp → nhận, tự cập nhật mỗi 2 giây. **Chọn nguồn** ở danh sách bên phải (giống tab video): *Tất cả camera* hoặc từng camera, kèm ảnh mới nhất, số ảnh, giờ chụp gần nhất. Chỉ làm mới khi đang mở tab này, để số đo "chụp → hiển thị" chỉ tính ảnh người dùng thật sự thấy.
+Trang mặc định sau khi vào. **Chọn một camera** trong danh sách (giống nhau ở cả 2 tab):
+- tab **Video trực tiếp** phát video của camera đó (YouTube nhúng),
+- tab **Ảnh từ Client** hiện ảnh **Client chụp từ chính camera đó** (khung hình mới nhất + độ trễ, ảnh gần đây, tự cập nhật mỗi 2 giây).
+
+**Quản trị viên chọn camera nào thì Client chụp camera đó** (Server đặt camera đó là camera chụp, Client nhận qua `/api/config` trong ≤ 10 giây và tự chuyển luồng chụp; ảnh đầu tiên có sau khoảng 10–20 giây). Người xem chọn camera chỉ để xem — không làm đổi camera Client đang chụp; nếu chọn camera khác camera đang chụp, trang báo "Client đang chụp camera …". Camera đang chụp có nhãn *Client đang chụp*. Tab ảnh chỉ làm mới khi đang mở, để số đo "chụp → hiển thị" chỉ tính ảnh người dùng thật sự thấy.
 
 Tab Video trực tiếp: xem livestream YouTube ngay trên Website bằng khung nhúng (`youtube-nocookie.com/embed`). Trình duyệt tải video thẳng từ YouTube, Server chỉ lưu danh sách link (bảng `live_streams`).
 - Chọn camera ở danh sách bên phải, hoặc bật **Xem nhiều camera cùng lúc** (lưới, tối đa 6).
@@ -266,6 +268,7 @@ Camera IP ──RTSP / HTTP──▶ Server (OpenCV đọc khung, nén JPEG) ─
 | GET | `/api/streams/search?q=...` | admin | Tìm livestream đang phát trên YouTube |
 | GET / POST | `/api/me`, `/api/me/password` | viewer | Người đang đăng nhập / tự đổi mật khẩu `{old, new}` |
 | GET / POST | `/api/users` | admin | Danh sách / tạo tài khoản `{username, password, role}` |
+| POST | `/api/streams/<id>/select` | admin | Chọn livestream này cho Client chụp (tắt chụp các livestream khác) — trang Camera trực tiếp gọi khi admin chọn camera |
 | PATCH | `/api/streams/<id>`, `/api/ipcams/<id>` | admin | `{capture: true/false}` bật / tắt Client chụp ảnh từ camera này |
 | PATCH / DELETE | `/api/users/<id>` | admin | Đổi quyền, đặt lại mật khẩu `{role?, password?}` / xóa |
 
