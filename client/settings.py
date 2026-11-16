@@ -2,7 +2,7 @@
 Cấu hình chung của Client: đường dẫn, cấu hình mặc định, đọc cấu hình, danh sách camera, log.
 
 Thứ tự ưu tiên cấu hình: DEFAULT_SETTINGS < client_config.json < biến môi trường (CAMERA_URL,
-url_env của từng camera, đọc cả từ client/.env) < tham số dòng lệnh.
+PBL4_API_KEY, url_env của từng camera, đọc cả từ client/.env) < tham số dòng lệnh.
 
 Nhiều camera: khai báo mảng "cameras" trong client_config.json, mỗi camera chạy một luồng chụp
 riêng. Không có "cameras" (hoặc truyền --source-type / --source-url) → 1 camera từ "source".
@@ -33,6 +33,7 @@ DEFAULT_SETTINGS = {
         'rtsp_transport': 'tcp',
     },
     'server_url': 'http://127.0.0.1:5000',
+    'api_key': '',   # khóa API gửi kèm header X-API-Key; nên đặt PBL4_API_KEY trong client/.env
     'capture': {'capture_interval': 5, 'jpeg_quality': 80, 'resize_width': 854},
     'config_poll_interval': 10,
     'upload_enabled': True,
@@ -96,6 +97,8 @@ def load_settings(args):
     # Biến môi trường (để không phải ghi mật khẩu camera vào file commit lên git)
     if os.environ.get('CAMERA_URL'):
         settings['source']['url'] = os.environ['CAMERA_URL']
+    if os.environ.get('PBL4_API_KEY'):
+        settings['api_key'] = os.environ['PBL4_API_KEY']
     # Tham số dòng lệnh ưu tiên cao nhất
     if args.source_type:
         settings['source']['type'] = args.source_type

@@ -21,7 +21,7 @@ Người dùng là sinh viên, giao tiếp bằng **tiếng Việt**. Comment, l
 
 ```powershell
 # Cài đặt
-cd server; pip install -r requirements.txt      # Flask, Flask-Cors, PyMySQL, cryptography
+cd server; pip install -r requirements.txt      # Flask, PyMySQL, cryptography, yt-dlp
 cd client; pip install -r requirements.txt      # opencv-python, requests, yt-dlp
 
 # Server (máy này: MySQL80 chạy ở cổng 3307, KHÔNG phải 3306)
@@ -58,11 +58,13 @@ Mỗi chức năng một file — sửa lỗi chức năng nào thì vào đúng
 - `local_store.py`: SQLite WAL `client/data/client.db`, vừa là kho metadata vừa là hàng đợi gửi bù. Mỗi thao tác mở connection riêng (không chia sẻ giữa luồng).
 
 ### Server (`server/`)
-- `Server.py` chỉ tạo Flask app và đăng ký 4 Blueprint: `routes/images.py` (`/api/images…`, `/uploads/…`), `routes/config.py` (`/api/config…`), `routes/monitor.py` (`/api/stats`, `/api/clients`, `/api/cameras`), `routes/web.py` (các trang HTML).
+- `Server.py` chỉ tạo Flask app và đăng ký 6 Blueprint: `routes/images.py` (`/api/images…`, `/uploads/…`), `routes/config.py` (`/api/config…`), `routes/monitor.py` (`/api/stats`, `/api/clients`, `/api/cameras`), `routes/streams.py` (`/api/streams…`, camera YouTube), `routes/users.py` (`/api/me`, `/api/users…`), `routes/web.py` (các trang HTML, `/login`).
+- **Phân quyền** (`auth.py`): `guard()` chạy trước mọi request — **mặc định bắt đăng nhập**, trừ `PUBLIC_ENDPOINTS` (login, static) và `CLIENT_ENDPOINTS` (upload ảnh, lấy config: kiểm tra header `X-API-Key` = `PBL4_API_KEY`). Route chỉ cho admin gắn `@admin_required`. Template có sẵn `current_user`, `is_admin`; JS có `IS_ADMIN` (chỉ để ẩn nút, Server vẫn kiểm tra). Thêm route mới → xác định ai được gọi.
+- `youtube.py`: yt-dlp tách id / kiểm tra (`inspect`: live_status, cho nhúng) / tìm livestream (`search_live`). Trang `/live` nhúng `youtube-nocookie.com/embed/<id>`.
 - Module dùng chung: `settings.py` (đường dẫn, `MYSQL_CONFIG`, `CONFIG_LIMITS`, `log`), `timeutil.py` (thời gian), `db.py` (`get_db`, `init_db`, `to_json`, `touch_client`), `storage.py` (`cleanup_old_images`, `remove_file`, `looks_like_image`). Import kiểu tuyệt đối (`from db import get_db`) — chạy từ thư mục `server/`.
 - Mỗi request mở **một kết nối MySQL riêng** (`get_db()`, `DictCursor`) → an toàn với `threaded=True`.
 - `init_db()` (trong `db.py`) được `Server.py` gọi khi import: tạo database, tạo bảng, **tự thêm cột thiếu / nâng `DATETIME` → `DATETIME(3)`** cho DB cũ (qua `information_schema`). Đổi schema thì sửa cả `init_db()`, `schema.sql` và `migrate_sqlite_to_mysql.py`.
-- Bảng: `images`, `config` (đúng 1 dòng id=1), `config_history`, `clients`. Camera = cột `images.source` (id camera do Client gửi); `clients.cameras` = danh sách id camera Client khai báo (gửi qua `GET /api/config?cameras=`), `/api/cameras` gộp cả hai cho ô chọn camera trên Website.
+- Bảng: `images`, `config` (đúng 1 dòng id=1), `config_history`, `clients`, `users` (role `admin`/`viewer`, mật khẩu băm), `live_streams` (link YouTube cho trang `/live`). Camera = cột `images.source` (id camera do Client gửi); `clients.cameras` = danh sách id camera Client khai báo (gửi qua `GET /api/config?cameras=`), `/api/cameras` gộp cả hai cho ô chọn camera trên Website.
 - Chống nhận trùng: cùng `(client_id, client_capture_id, capture_time)` → trả lại bản ghi cũ với `duplicate: true`.
 - `cleanup_old_images()` xóa ảnh cũ nhất khi vượt `config.max_images`.
 - Giới hạn tham số cấu hình nằm ở `CONFIG_LIMITS`.
@@ -72,7 +74,8 @@ Mỗi chức năng một file — sửa lỗi chức năng nào thì vào đúng
 - **Thời gian**: lưu MySQL kiểu `DATETIME(3)` (mili giây — cần cho đo độ trễ). Ra JSON/template luôn là chuỗi ISO `YYYY-MM-DDTHH:MM:SS.mmm` qua `to_json()` / `iso()`. Template `detail.html` cắt chuỗi (`capture_time[8:10]`) nên **phải truyền chuỗi, không truyền datetime**. Dữ liệu vào đi qua `normalize_time()`.
 - **SQL**: placeholder `%s` (PyMySQL), không dùng `?`; không dùng `conn.execute` (PyMySQL không có) — luôn qua `cursor`. Đọc COUNT bằng alias: `SELECT COUNT(*) AS n` rồi `['n']`.
 - **Log** dùng `log = logging.getLogger('server'|'client')` (ghi `logs/*.log` xoay vòng), không dùng `print` trong Server.
-- **Bảo mật**: không ghi mật khẩu MySQL / camera vào file trong repo — chỉ qua biến môi trường. Không bật `PBL4_DEBUG` khi mở ra LAN.
+- **Bảo mật**: không ghi mật khẩu MySQL / camera / `PBL4_API_KEY` / `PBL4_ADMIN_PASSWORD` / `PBL4_SECRET_KEY` vào file trong repo — chỉ qua `.env` (server/.env, client/.env) hoặc biến môi trường. Không bật `PBL4_DEBUG` khi mở ra LAN.
+- **Kiểm thử có đăng nhập**: mật khẩu admin nằm trong `server/.env`. Đăng nhập sai 5 lần/5 phút khóa IP đó 5 phút (bộ nhớ trong tiến trình) — thử brute-force thì để cuối, hoặc gọi qua IP LAN thay vì 127.0.0.1. Trên Windows, dừng Server thử bằng PID (`Stop-Process`): dừng shell bao ngoài không dừng python, và nhiều tiến trình có thể cùng nghe một cổng.
 - Client và Server ở 2 máy phải đồng bộ đồng hồ (NTP) thì số liệu độ trễ mới đúng.
 
 ## Git

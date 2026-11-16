@@ -1,12 +1,14 @@
 """
 API cấu hình từ xa:
-    GET    /api/config                 Client định kỳ gọi để lấy cấu hình mới nhất
-    POST   /api/config                 Website thiết lập tham số (giới hạn trong CONFIG_LIMITS)
-    GET    /api/config/history         lịch sử thay đổi cấu hình
+    GET    /api/config                 Client định kỳ gọi (khóa API) / Website đọc (đăng nhập)
+    POST   /api/config                 admin thiết lập tham số (giới hạn trong CONFIG_LIMITS)
+    GET    /api/config/history         lịch sử thay đổi cấu hình (admin)
 """
 import re
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
+
+from auth import admin_required
 
 from db import get_db, to_json, touch_client
 from settings import CONFIG_LIMITS, log
@@ -30,13 +32,15 @@ def get_config():
     cur = conn.cursor()
     cur.execute('SELECT * FROM config WHERE id = 1')
     row = to_json(cur.fetchone())
-    touch_client(cur, request.args.get('client_id'), 'config_poll', _camera_list(request.args.get('cameras')))
+    if g.is_client:   # chỉ ghi nhận Client thật (có khóa API), không ghi khi trang Cấu hình gọi
+        touch_client(cur, request.args.get('client_id'), 'config_poll', _camera_list(request.args.get('cameras')))
     conn.commit()
     conn.close()
     return jsonify(row)
 
 
 @config_bp.route('/api/config', methods=['POST'])
+@admin_required
 def update_config():
     data = request.get_json(silent=True) or {}
     fields = {}
@@ -60,8 +64,9 @@ def update_config():
     for k, v in fields.items():
         if old.get(k) != v:
             cur.execute('''INSERT INTO config_history (changed_at, field, old_value, new_value, changed_by)
-                           VALUES (%s, %s, %s, %s, %s)''', (changed_at, k, old.get(k), v, request.remote_addr))
-            log.info('[CONFIG] %s: %s → %s (bởi %s)', k, old.get(k), v, request.remote_addr)
+                           VALUES (%s, %s, %s, %s, %s)''',
+                        (changed_at, k, old.get(k), v, f"{g.user['username']} ({request.remote_addr})"[:45]))
+            log.info('[CONFIG] %s: %s → %s (bởi %s)', k, old.get(k), v, g.user['username'])
 
     fields['updated_at'] = changed_at
     set_clause = ', '.join(f'{k} = %s' for k in fields)
@@ -77,6 +82,7 @@ def update_config():
 
 
 @config_bp.route('/api/config/history', methods=['GET'])
+@admin_required
 def config_history():
     limit = min(max(1, request.args.get('limit', 50, type=int)), 500)
     conn = get_db()

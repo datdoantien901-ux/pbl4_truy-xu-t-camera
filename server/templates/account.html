@@ -1,0 +1,40 @@
+{% extends '_layout.html' %}
+{% block title %}Tài khoản{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Tài khoản</h1>
+    <p>Bạn đăng nhập với tên <strong>{{ current_user.username }}</strong>, quyền
+       <strong>{{ 'Quản trị viên' if is_admin else 'Người xem' }}</strong>.</p>
+  </div>
+</div>
+
+<h2 class="section-title" style="margin-top:0">Đổi mật khẩu</h2>
+<form id="pw" class="panel user-form" autocomplete="off">
+  <label class="field"><span>Mật khẩu hiện tại</span>
+    <input type="password" name="old" required autocomplete="current-password"></label>
+  <label class="field"><span>Mật khẩu mới (ít nhất 6 ký tự)</span>
+    <input type="password" name="new" required minlength="6" autocomplete="new-password"></label>
+  <label class="field"><span>Nhập lại mật khẩu mới</span>
+    <input type="password" name="again" required minlength="6" autocomplete="new-password"></label>
+  <button class="btn btn-primary" type="submit">Đổi mật khẩu</button>
+</form>
+<div class="toast" id="msg" role="status"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('pw').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target, msg = document.getElementById('msg');
+  if (f.new.value !== f.again.value) {
+    msg.className = 'toast err'; msg.textContent = 'Hai lần nhập mật khẩu mới không khớp.'; return;
+  }
+  const r = await fetch('/api/me/password', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                             body: JSON.stringify({old: f.old.value, new: f.new.value})});
+  const j = await r.json().catch(() => ({}));
+  msg.className = 'toast ' + (r.ok ? 'ok' : 'err');
+  msg.textContent = r.ok ? 'Đã đổi mật khẩu.' : (j.error || ('Lỗi ' + r.status));
+  if (r.ok) f.reset();
+});
+</script>
+{% endblock %}

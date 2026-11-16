@@ -58,3 +58,24 @@ CREATE TABLE IF NOT EXISTS clients (
     last_activity VARCHAR(50),
     cameras       VARCHAR(500)          -- id camera Client khai báo, vd 'youtube,nha'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Tài khoản Website: 'admin' toàn quyền, 'viewer' chỉ xem. Mật khẩu lưu dạng băm (werkzeug).
+-- Admin đầu tiên do Server tự tạo từ PBL4_ADMIN_USER / PBL4_ADMIN_PASSWORD (server/.env).
+CREATE TABLE IF NOT EXISTS users (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    username      VARCHAR(50) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role          VARCHAR(10) NOT NULL DEFAULT 'viewer',
+    created_at    DATETIME(3) NOT NULL,
+    last_login    DATETIME(3) NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Livestream YouTube xem trực tiếp trên trang /live (Server nạp danh sách mẫu khi tạo bảng lần đầu)
+CREATE TABLE IF NOT EXISTS live_streams (
+    id        INT AUTO_INCREMENT PRIMARY KEY,
+    video_id  VARCHAR(20) NOT NULL UNIQUE,
+    title     VARCHAR(255) NOT NULL,
+    channel   VARCHAR(255),
+    added_by  VARCHAR(50),
+    added_at  DATETIME(3) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

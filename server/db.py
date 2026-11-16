@@ -3,13 +3,15 @@ Kết nối MySQL và khởi tạo / nâng cấp schema.
 Mỗi request mở một kết nối riêng (get_db) → an toàn khi Flask chạy threaded=True.
 Đổi schema thì sửa cả init_db(), schema.sql và migrate_sqlite_to_mysql.py.
 """
+import secrets
 from datetime import datetime
 
 import pymysql
 import pymysql.cursors
 from flask import request
+from werkzeug.security import generate_password_hash
 
-from settings import MYSQL_CONFIG, log
+from settings import ADMIN_PASSWORD, ADMIN_USER, MYSQL_CONFIG, log
 from timeutil import iso, now_dt
 
 
@@ -138,10 +140,60 @@ def init_db():
     ''')
     # Danh sách id camera Client khai báo (vd 'youtube,nha') → Website biết cả camera chưa gửi ảnh
     _add_column(cur, 'clients', 'cameras', 'VARCHAR(500)')
+
+    # Tài khoản đăng nhập Website: role 'admin' (toàn quyền) hoặc 'viewer' (chỉ xem)
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            username      VARCHAR(50) NOT NULL UNIQUE,
+            password_hash VARCHAR(255) NOT NULL,
+            role          VARCHAR(10) NOT NULL DEFAULT 'viewer',
+            created_at    DATETIME(3) NOT NULL,
+            last_login    DATETIME(3) NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ''')
+    _create_first_admin(cur)
+
+    # Danh sách livestream YouTube xem trực tiếp trên Website (trang Camera YouTube)
+    cur.execute("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() "
+                "AND TABLE_NAME = 'live_streams'")
+    new_streams_table = cur.fetchone() is None
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS live_streams (
+            id        INT AUTO_INCREMENT PRIMARY KEY,
+            video_id  VARCHAR(20) NOT NULL UNIQUE,
+            title     VARCHAR(255) NOT NULL,
+            channel   VARCHAR(255),
+            added_by  VARCHAR(50),
+            added_at  DATETIME(3) NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ''')
+    if new_streams_table:   # chỉ nạp danh sách mẫu lần đầu (admin xóa hết thì không nạp lại)
+        from youtube import DEFAULT_STREAMS
+        cur.executemany('''INSERT IGNORE INTO live_streams (video_id, title, channel, added_by, added_at)
+                           VALUES (%s, %s, %s, 'system', %s)''',
+                        [(v, t, c, now_dt()) for v, t, c in DEFAULT_STREAMS])
     conn.commit()
     conn.close()
     log.info('MySQL sẵn sàng: %s@%s:%s/%s', MYSQL_CONFIG['user'], MYSQL_CONFIG['host'],
              MYSQL_CONFIG['port'], MYSQL_CONFIG['database'])
+
+
+def _create_first_admin(cur):
+    """Bảng users trống → tạo admin đầu tiên từ PBL4_ADMIN_USER / PBL4_ADMIN_PASSWORD.
+    Không đặt mật khẩu → sinh ngẫu nhiên và in ra console một lần (đổi ngay ở trang Người dùng)."""
+    cur.execute('SELECT COUNT(*) AS n FROM users')
+    if cur.fetchone()['n']:
+        return
+    password = ADMIN_PASSWORD or secrets.token_urlsafe(9)
+    cur.execute('INSERT INTO users (username, password_hash, role, created_at) VALUES (%s, %s, %s, %s)',
+                (ADMIN_USER, generate_password_hash(password), 'admin', now_dt()))
+    if ADMIN_PASSWORD:
+        log.info('Đã tạo tài khoản admin "%s" (mật khẩu lấy từ PBL4_ADMIN_PASSWORD)', ADMIN_USER)
+    else:
+        # Chỉ in ra màn hình, không ghi vào file log
+        print(f'\n*** Đã tạo tài khoản admin "{ADMIN_USER}" với mật khẩu ngẫu nhiên: {password}\n'
+              f'*** Hãy đăng nhập và đổi mật khẩu, hoặc đặt PBL4_ADMIN_PASSWORD trong server/.env\n')
 
 
 def touch_client(cur, client_id, activity, cameras=None):

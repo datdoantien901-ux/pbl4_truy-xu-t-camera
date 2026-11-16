@@ -1,0 +1,220 @@
+{% extends '_layout.html' %}
+{% block title %}Camera YouTube{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Camera YouTube</h1>
+    <p>Xem trực tiếp các camera đang phát trên YouTube. Video phát thẳng từ YouTube về trình duyệt,
+       máy xem cần có Internet.</p>
+  </div>
+  <div class="head-controls">
+    <label class="toggle"><input type="checkbox" id="gridMode"> Xem nhiều camera cùng lúc</label>
+  </div>
+</div>
+
+<div id="single" class="live-layout">
+  <section class="panel player">
+    <div class="player-frame" id="frame">
+      <div class="empty"><strong>Chưa chọn camera</strong>Chọn một camera trong danh sách bên phải.</div>
+    </div>
+    <div class="player-info">
+      <div><h2 id="pTitle">—</h2><span class="muted" id="pChannel"></span> <span id="pStatus"></span></div>
+      <div class="actions">
+        <button class="btn" id="checkBtn" disabled>Kiểm tra còn phát</button>
+        <a class="btn" id="ytLink" target="_blank" rel="noopener noreferrer">Mở trên YouTube</a>
+      </div>
+    </div>
+  </section>
+  <aside class="panel stream-list" id="list" aria-label="Danh sách camera"></aside>
+</div>
+
+<div id="grid" class="live-grid" hidden></div>
+
+{% if is_admin %}
+<div class="admin-tools">
+  <section class="panel">
+    <h2>Thêm link camera</h2>
+    <p>Dán link livestream YouTube. Server kiểm tra link có tồn tại và có cho nhúng vào web khác không.</p>
+    <form id="addForm" class="inline-form">
+      <input type="url" name="url" placeholder="https://www.youtube.com/watch?v=..." required aria-label="Link YouTube">
+      <button class="btn btn-primary" type="submit">Thêm</button>
+    </form>
+    <div class="toast" id="addMsg" role="status"></div>
+  </section>
+  <section class="panel">
+    <h2>Tìm camera đang phát</h2>
+    <p>Server tìm trên YouTube các video đang phát trực tiếp theo từ khóa (mất vài giây).</p>
+    <form id="searchForm" class="inline-form">
+      <input type="search" name="q" placeholder="vd: camera Đà Nẵng, traffic camera live" required aria-label="Từ khóa">
+      <button class="btn" type="submit">Tìm</button>
+    </form>
+    <div class="toast" id="searchMsg" role="status"></div>
+    <div class="search-results" id="results"></div>
+  </section>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+const GRID_MAX = 6;   // nhiều khung nhúng cùng lúc rất nặng máy → giới hạn
+let streams = [];
+let current = new URLSearchParams(location.search).get('v');
+
+const thumb = id => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
+const embed = id => `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&mute=1&playsinline=1&rel=0`;
+const ytUrl = id => `https://www.youtube.com/watch?v=${id}`;
+
+function iframe(s) {
+  return el('iframe', {src: embed(s.video_id), title: s.title, loading: 'lazy',
+    allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: true,
+    referrerpolicy: 'strict-origin-when-cross-origin'});
+}
+
+function statusBadge(info) {
+  if (info.error) return el('span', {class: 'badge'}, 'Lỗi: ' + info.error);
+  if (info.live_status === 'is_live') return el('span', {class: 'badge live'}, '● Đang phát');
+  if (info.live_status === 'is_upcoming') return el('span', {class: 'badge'}, 'Chưa bắt đầu');
+  return el('span', {class: 'badge'}, 'Đã dừng phát');
+}
+
+async function load() {
+  streams = await (await fetch('/api/streams')).json();
+  if (!streams.some(s => s.video_id === current)) current = streams[0]?.video_id || null;
+  render();
+}
+
+function select(id) {
+  current = id;
+  const u = new URL(location.href);
+  u.searchParams.set('v', id);
+  history.replaceState(null, '', u);
+  render();
+}
+
+function render() {
+  const grid = document.getElementById('gridMode').checked;
+  document.getElementById('single').hidden = grid;
+  document.getElementById('grid').hidden = !grid;
+  if (grid) renderGrid(); else { document.getElementById('grid').replaceChildren(); renderSingle(); }
+}
+
+function renderSingle() {
+  const list = document.getElementById('list');
+  if (!streams.length) {
+    list.replaceChildren(el('div', {class: 'empty'}, el('strong', {}, 'Chưa có camera nào'),
+      IS_ADMIN ? 'Thêm link hoặc tìm camera ở bên dưới.' : 'Nhờ quản trị viên thêm link camera.'));
+  } else {
+    list.replaceChildren(...streams.map(s => el('div', {class: 'stream-item' + (s.video_id === current ? ' active' : ''),
+        role: 'button', tabindex: 0, 'aria-current': s.video_id === current ? 'true' : null,
+        onclick: () => select(s.video_id),
+        onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(s.video_id); } }},
+      el('img', {src: thumb(s.video_id), alt: '', loading: 'lazy'}),
+      el('span', {}, el('span', {class: 'stream-title'}, s.title), el('span', {class: 'stream-channel'}, s.channel || '')),
+      IS_ADMIN ? el('button', {class: 'icon-btn', title: 'Xóa khỏi danh sách', 'aria-label': 'Xóa ' + s.title,
+                               onclick: e => { e.stopPropagation(); remove(s); }}, '✕') : el('span'))));
+  }
+
+  const s = streams.find(x => x.video_id === current);
+  const frame = document.getElementById('frame');
+  const old = frame.querySelector('iframe');
+  document.getElementById('pStatus').replaceChildren();
+  document.getElementById('checkBtn').disabled = !s;
+  if (!s) {
+    old?.remove();
+    document.getElementById('pTitle').textContent = '—';
+    document.getElementById('pChannel').textContent = '';
+    return;
+  }
+  if (!old || old.dataset.id !== s.video_id) {   // chỉ tạo lại khung khi đổi camera (tránh phát lại từ đầu)
+    const f = iframe(s);
+    f.dataset.id = s.video_id;
+    if (old) old.replaceWith(f); else frame.append(f);
+  }
+  document.getElementById('pTitle').textContent = s.title;
+  document.getElementById('pChannel').textContent = s.channel ? 'Kênh ' + s.channel : '';
+  document.getElementById('ytLink').href = ytUrl(s.video_id);
+}
+
+function renderGrid() {
+  const box = document.getElementById('grid');
+  const shown = streams.slice(0, GRID_MAX);
+  box.replaceChildren(...shown.map(s => el('section', {class: 'panel'},
+    el('div', {class: 'player-frame'}, iframe(s)),
+    el('div', {class: 'cap'}, el('span', {title: s.title}, s.title),
+       el('button', {class: 'btn', onclick: () => { document.getElementById('gridMode').checked = false; select(s.video_id); }}, 'Xem lớn')))));
+  if (streams.length > GRID_MAX)
+    box.append(el('p', {class: 'muted'}, `Chỉ hiện ${GRID_MAX}/${streams.length} camera đầu để máy không bị chậm.`));
+}
+
+document.getElementById('gridMode').onchange = render;
+document.getElementById('checkBtn').onclick = async () => {
+  const s = streams.find(x => x.video_id === current);
+  if (!s) return;
+  const box = document.getElementById('pStatus');
+  box.replaceChildren(el('span', {class: 'muted'}, 'Đang kiểm tra…'));
+  try { box.replaceChildren(statusBadge(await (await fetch(`/api/streams/${s.id}/check`)).json())); }
+  catch { box.replaceChildren(statusBadge({error: 'không kết nối được Server'})); }
+};
+
+async function remove(s) {
+  if (!confirm(`Xóa "${s.title}" khỏi danh sách?`)) return;
+  const r = await fetch(`/api/streams/${s.id}`, {method: 'DELETE'});
+  if (!r.ok) alert('Chưa xóa được (lỗi ' + r.status + ').');
+  load();
+}
+
+async function add(url, msgBox) {
+  msgBox.className = 'toast'; msgBox.textContent = 'Đang kiểm tra link…';
+  const r = await fetch('/api/streams', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                         body: JSON.stringify({url})});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { msgBox.className = 'toast err'; msgBox.textContent = j.error || ('Lỗi ' + r.status); return false; }
+  msgBox.className = 'toast ok';
+  msgBox.textContent = `Đã thêm "${j.title}".` + (j.live_status && j.live_status !== 'is_live'
+    ? ' Lưu ý: video này hiện không phát trực tiếp.' : '');
+  await load();
+  select(j.video_id);
+  return true;
+}
+
+if (IS_ADMIN) {
+  document.getElementById('addForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (await add(e.target.url.value.trim(), document.getElementById('addMsg'))) e.target.reset();
+  });
+
+  document.getElementById('searchForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const msgBox = document.getElementById('searchMsg');
+    const box = document.getElementById('results');
+    const btn = e.target.querySelector('button');
+    btn.disabled = true;
+    msgBox.className = 'toast'; msgBox.textContent = 'Đang tìm trên YouTube…';
+    box.replaceChildren();
+    try {
+      const r = await fetch('/api/streams/search?q=' + encodeURIComponent(e.target.q.value.trim()));
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || ('lỗi ' + r.status));
+      msgBox.className = j.length ? 'toast' : 'toast err';
+      msgBox.textContent = j.length ? '' : 'Không thấy video nào đang phát trực tiếp.';
+      box.replaceChildren(...j.map(s => el('div', {class: 'stream-item'},
+        el('a', {href: ytUrl(s.video_id), target: '_blank', rel: 'noopener noreferrer'},
+           el('img', {src: thumb(s.video_id), alt: '', loading: 'lazy'})),
+        el('span', {}, el('span', {class: 'stream-title', title: s.title}, s.title),
+           el('span', {class: 'stream-channel'}, s.channel),
+           s.embeddable ? null : el('span', {class: 'badge'}, 'Không cho nhúng')),
+        s.added ? el('span', {class: 'badge ok'}, 'Đã có')
+          : el('button', {class: 'btn', disabled: !s.embeddable, onclick: async ev => {
+              ev.target.disabled = true;
+              if (await add(ytUrl(s.video_id), msgBox)) ev.target.replaceWith(el('span', {class: 'badge ok'}, 'Đã có'));
+              else ev.target.disabled = false;
+            }}, 'Thêm'))));
+    } catch (err) {
+      msgBox.className = 'toast err'; msgBox.textContent = err.message;
+    } finally { btn.disabled = false; }
+  });
+}
+
+load();
+</script>
+{% endblock %}
