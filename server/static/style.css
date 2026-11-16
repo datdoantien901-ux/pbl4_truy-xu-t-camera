@@ -290,6 +290,11 @@ input[type=password], input[type=url], input[type=search] {
   color: var(--ink-soft); font-size: .72rem; display: grid; place-items: center; }
 .chip-capture { display: inline-block; margin-top: .25rem; font-size: .7rem; font-weight: 600; padding: .08rem .45rem;
   border-radius: 999px; background: var(--ok-tint); color: var(--ok); }
+.capture-line { margin-top: .35rem; font-size: .84rem; font-weight: 500; }
+.capture-line.ok { color: var(--ok); }
+.capture-line.warn { color: #8a5a00; }
+.capture-note.ok { border-left-color: var(--ok); background: var(--ok-tint); color: var(--ok); }
+.capture-note { margin-bottom: 1rem; }
 .btn-capture-on { border-color: var(--ok); color: var(--ok); background: var(--ok-tint); }
 .ipcam-cap .muted { display: block; }
 .dot-live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: .35rem; vertical-align: middle; }
