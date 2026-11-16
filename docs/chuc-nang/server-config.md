@@ -18,6 +18,7 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-16 | `feature/client-chup-tu-web` | Tính năng | `GET /api/config` trả thêm `cameras` (camera bật chụp, kèm URL) — **chỉ cho Client có khóa API**, trình duyệt không nhận (URL camera IP có thể chứa mật khẩu) | routes/config.py, camera_sources.py (mới) |
 | 2026-11-16 | `feature/phan-quyen` | Tính năng | `POST /api/config`, `/api/config/history` chỉ admin; `changed_by` ghi `tên (IP)`. `GET /api/config` nhận khóa API (Client) hoặc phiên đăng nhập (Website); chỉ ghi nhận `clients` khi là Client thật | routes/config.py |
 | 2026-11-02 | `feature/web-camera-filter` | Tính năng | `GET /api/config` nhận `cameras=youtube,nha` (lọc id hợp lệ, bỏ trùng) → lưu vào `clients.cameras` | routes/config.py |
 | 2026-11-02 | `refactor/server-config` · `cae1685` | Tái cấu trúc | Tách API cấu hình ra `routes/config.py` (Blueprint `config`) | routes/config.py, Server.py |

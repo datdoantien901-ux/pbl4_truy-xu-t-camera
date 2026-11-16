@@ -6,6 +6,7 @@ Camera IP xem trực tiếp (trang /ipcam):
                                        → 1 ảnh JPEG chụp từ camera                        (admin)
     POST   /api/ipcams                 lưu camera {name, ...như test}                       (admin)
     DELETE /api/ipcams/<id>            xóa                                                  (admin)
+    PATCH  /api/ipcams/<id>            {capture: true/false} bật/tắt Client chụp ảnh       (admin)
     GET    /ipcam/<id>/stream          luồng MJPEG để trình duyệt hiển thị bằng <img>      (đăng nhập)
     GET    /api/ipcams/<id>/status     luồng đọc đang chạy? bao nhiêu người xem? lỗi?      (đăng nhập)
 
@@ -114,6 +115,25 @@ def delete_ipcam(cam_id):
     ipcam.hub.stop(cam_id)
     log.info('[IPCAM] %s xóa camera #%d', g.user['username'], cam_id)
     return jsonify({'id': cam_id})
+
+
+@ipcams_bp.route('/api/ipcams/<int:cam_id>', methods=['PATCH'])
+@admin_required
+def set_capture(cam_id):
+    """{capture: true/false} → bật/tắt "Client chụp ảnh" từ camera IP này."""
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data.get('capture'), bool):
+        return jsonify({'error': 'Thiếu capture: true / false'}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('UPDATE ip_cameras SET capture = %s WHERE id = %s', (int(data['capture']), cam_id))
+    conn.commit()
+    conn.close()
+    row = _get(cam_id)
+    if row is None:
+        return jsonify({'error': 'Không tìm thấy camera'}), 404
+    log.info('[IPCAM] %s %s chụp ảnh từ camera #%d', g.user['username'], 'BẬT' if data['capture'] else 'TẮT', cam_id)
+    return jsonify(_public(row))
 
 
 @ipcams_bp.route('/api/ipcams/<int:cam_id>/status', methods=['GET'])

@@ -49,7 +49,8 @@ client/
   shared_config.py    tham số chụp dùng chung giữa các luồng (có Lock)
   capture_thread.py   luồng chụp ảnh (producer): đọc frame, nén JPEG, lưu file + SQLite
   upload_thread.py    luồng gửi ảnh (consumer): POST lên Server, retry, gửi bù
-  config_thread.py    luồng lấy cấu hình từ Server định kỳ
+  config_thread.py    luồng lấy cấu hình + danh sách camera từ Server định kỳ
+  camera_manager.py   mở / dừng luồng chụp khi admin bật / tắt camera trên Website
   video_source.py     lớp VideoSource: rtsp | http | webcam | file | youtube
   local_store.py      SQLite cục bộ, đồng thời là hàng đợi gửi bù
   client_config.json  cấu hình Client
@@ -66,6 +67,7 @@ server/
   routes/monitor.py   API giám sát  /api/stats, /api/clients, /api/cameras
   routes/web.py       các trang web /login, /live (2 tab: video | ảnh từ Client), /ipcam, /manage, /config, /users, /account, /stats, /image/<id>
   routes/streams.py   API camera YouTube  /api/streams...
+  camera_sources.py   danh sách camera Client cần chụp (camera bật "Client chụp ảnh" trên Website)
   routes/ipcams.py    API camera IP /api/ipcams..., luồng MJPEG /ipcam/<id>/stream
   ipcam.py            đọc camera IP bằng OpenCV, phát lại MJPEG (1 luồng đọc dùng chung / camera)
   routes/users.py     API tài khoản /api/me, /api/users...
@@ -117,6 +119,12 @@ python Server.py
 Sửa `client/client_config.json` (danh sách camera, địa chỉ server), rồi chạy:
 
 Chép `client/.env.example` thành `client/.env` và điền `PBL4_API_KEY` **trùng với Server**. Sai hoặc thiếu khóa thì Server trả `401`; Client ghi lỗi vào log và giữ ảnh lại để gửi bù khi sửa xong khóa.
+
+**Client chụp camera nào?** Mặc định (`"cameras_from_server": true` trong `client_config.json`) Client chụp **các camera trên Website được admin bật "Client chụp ảnh"**:
+- mục *Camera trực tiếp* → chọn camera → nút **Cho Client chụp ảnh** (camera đang chụp có nhãn *Client đang chụp*),
+- mục *Camera IP* → nút **Chụp ảnh** trên từng camera.
+
+Client hỏi Server mỗi 10 giây (cùng lúc lấy cấu hình), nên bật / tắt trên Website thì khoảng 10 giây sau Client tự mở / dừng luồng chụp, **không cần khởi động lại Client**. Ảnh gửi lên mang id camera (`yt-<video id>`, `ip-<số>`), tab *Ảnh từ Client* hiện đúng tên camera. Muốn dùng danh sách camera tự khai báo như trước: đặt `"cameras_from_server": false` (dùng mảng `"cameras"`), hoặc chạy với `--source-type/--source-url`.
 
 ```bash
 cd client
@@ -240,7 +248,7 @@ Camera IP ──RTSP / HTTP──▶ Server (OpenCV đọc khung, nén JPEG) ─
 | GET | `/api/images?page=1&per_page=20&camera=...&start=...&end=...&q=...` | viewer | Danh sách, phân trang, lọc theo camera (`source`) / thời gian / tên |
 | GET | `/api/images/<id>` | viewer | Chi tiết ảnh |
 | DELETE | `/api/images/<id>` | admin | Xóa ảnh |
-| GET | `/api/config?client_id=...&cameras=youtube,nha` | Client / viewer | Client lấy cấu hình mới nhất, đồng thời báo các camera nó khai báo |
+| GET | `/api/config?client_id=...&cameras=yt-...,ip-1` | Client / viewer | Cấu hình mới nhất; Client (có khóa API) nhận thêm `cameras` = các camera cần chụp `[{id, name, type, url}]` và báo lại camera đang chụp |
 | POST | `/api/config` | admin | Thiết lập `capture_interval`, `jpeg_quality`, `resize_width`, `max_images` |
 | GET | `/api/config/history` | admin | Lịch sử thay đổi cấu hình |
 | GET | `/api/stats?limit=100` | viewer | Thống kê độ trễ và chu kỳ chụp thực tế |
@@ -258,6 +266,7 @@ Camera IP ──RTSP / HTTP──▶ Server (OpenCV đọc khung, nén JPEG) ─
 | GET | `/api/streams/search?q=...` | admin | Tìm livestream đang phát trên YouTube |
 | GET / POST | `/api/me`, `/api/me/password` | viewer | Người đang đăng nhập / tự đổi mật khẩu `{old, new}` |
 | GET / POST | `/api/users` | admin | Danh sách / tạo tài khoản `{username, password, role}` |
+| PATCH | `/api/streams/<id>`, `/api/ipcams/<id>` | admin | `{capture: true/false}` bật / tắt Client chụp ảnh từ camera này |
 | PATCH / DELETE | `/api/users/<id>` | admin | Đổi quyền, đặt lại mật khẩu `{role?, password?}` / xóa |
 
 "Quyền viewer" nghĩa là đã vào (khách hoặc tài khoản). Chưa đăng nhập thì API trả `401`, không đủ quyền thì trả `403`.

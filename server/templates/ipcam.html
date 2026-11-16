@@ -95,8 +95,12 @@ function card(c, idx) {
 
   const node = el('section', {class: 'panel ipcam-card'}, frame,
     el('div', {class: 'ipcam-cap'},
-      el('span', {}, el('strong', {}, c.name), el('span', {class: 'muted'}, c.url)),
+      el('span', {}, el('strong', {}, c.name), el('span', {class: 'muted'}, c.url),
+         c.capture ? el('span', {class: 'chip-capture'}, 'Client đang chụp') : null),
       el('span', {class: 'actions'}, playBtn,
+        IS_ADMIN && el('button', {class: 'btn' + (c.capture ? ' btn-capture-on' : ''), onclick: () => setCapture(c, !c.capture),
+          title: c.capture ? 'Client đang chụp ảnh camera này. Bấm để dừng.' : 'Cho Client chụp ảnh camera này gửi lên Server'},
+          c.capture ? 'Đang chụp · Tắt' : 'Chụp ảnh'),
         IS_ADMIN && el('button', {class: 'btn btn-danger', onclick: () => remove(c)}, 'Xóa'))));
   if (idx < AUTO_PLAY) play(); else stop('Bấm Xem để phát (tự phát tối đa ' + AUTO_PLAY + ' camera).');
   return node;
@@ -114,6 +118,13 @@ async function load() {
     return;
   }
   cams.forEach((c, i) => grid.append(card(c, i)));
+}
+
+async function setCapture(c, on) {
+  const r = await fetch(`/api/ipcams/${c.id}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'},
+                                               body: JSON.stringify({capture: on})});
+  if (!r.ok) { alert('Chưa đổi được (lỗi ' + r.status + ').'); return; }
+  load();
 }
 
 async function remove(c) {

@@ -22,4 +22,5 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-16 | `feature/client-chup-tu-web` | Tính năng | Cột `ip_cameras.capture`; `PATCH /api/ipcams/<id> {capture}` (admin); nút *Chụp ảnh* trên thẻ camera. Client chụp camera IP qua RTSP/HTTP như camera khác | routes/ipcams.py, db.py, templates/ipcam.html |
 | 2026-11-16 | `feature/camera-ip` | Tính năng | Tạo chức năng. Đã test với MySQL thật + camera MJPEG giả (127.0.0.1:8090): thử kết nối 0,4 s ra ảnh 640×480; IP không có camera → lỗi sau 6 s, không lộ mật khẩu; `file://` bị chặn; 3 người xem cùng lúc → 1 luồng đọc; rời trang → tự đóng camera sau 20 s; khách xem được, không thêm/thử được (403). Sửa lỗi ô Cổng bị đặt lại mặc định khi gõ | ipcam.py, routes/ipcams.py, templates/ipcam.html, db.py, schema.sql, static/style.css, requirements.txt |

@@ -9,6 +9,7 @@ from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 
+import camera_sources
 from db import get_db, to_json
 from timeutil import iso, seconds_between
 
@@ -54,12 +55,19 @@ def list_cameras():
     for r in cur.fetchall():
         for cam in r['cameras'].split(','):
             declared.setdefault(cam, []).append(r['client_id'])
+    names = camera_sources.names(cur)
+    capturing = [c['id'] for c in camera_sources.capture_list(cur, with_url=False)]
     conn.close()
 
     result = []
-    for cam in list(declared) + sorted(set(stats) - set(declared)):
+    # Thứ tự: camera đang bật chụp trên Website → camera Client khai báo → camera chỉ còn ảnh cũ
+    order = list(dict.fromkeys(capturing + list(declared) + sorted(set(stats) - set(declared))))
+    for cam in order:
         s = stats.get(cam)
         result.append({'id': cam,
+                       # camera không còn trên Website và Client không chụp nữa → chỉ còn ảnh cũ
+                       'name': names.get(cam) or (cam if cam in declared else f'{cam} (ảnh cũ)'),
+                       'capture': cam in capturing,
                        'image_count': s['n'] if s else 0,
                        'last_capture': iso(s['last_capture']) if s else None,
                        'last_image': files.get(s['last_id']) if s else None,

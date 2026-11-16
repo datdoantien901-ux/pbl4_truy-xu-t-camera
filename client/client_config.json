@@ -24,6 +24,8 @@
 
   "server_url": "http://127.0.0.1:5000",
 
+  "cameras_from_server": true,
+
   "capture": {
     "capture_interval": 5,
     "jpeg_quality": 80,

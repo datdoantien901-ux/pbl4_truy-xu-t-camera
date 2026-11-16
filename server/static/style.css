@@ -288,6 +288,10 @@ input[type=password], input[type=url], input[type=search] {
 .latest.compact .latest-info .btn { margin-top: 0; }
 .thumb-empty { width: 112px; aspect-ratio: 16 / 9; border-radius: var(--radius-sm); background: #dfe5e9;
   color: var(--ink-soft); font-size: .72rem; display: grid; place-items: center; }
+.chip-capture { display: inline-block; margin-top: .25rem; font-size: .7rem; font-weight: 600; padding: .08rem .45rem;
+  border-radius: 999px; background: var(--ok-tint); color: var(--ok); }
+.btn-capture-on { border-color: var(--ok); color: var(--ok); background: var(--ok-tint); }
+.ipcam-cap .muted { display: block; }
 .dot-live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: .35rem; vertical-align: middle; }
 
 /* ---------- Camera IP ---------- */

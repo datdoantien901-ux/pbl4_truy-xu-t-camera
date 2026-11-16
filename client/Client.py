@@ -12,8 +12,9 @@ Kiến trúc (mô hình Producer – Consumer):
     ┌──────────────┐                                                │ gửi bù khi có mạng
     │ ConfigThread │ ──HTTP GET /api/config mỗi 10s──▶ Server       ▼
     └──────────────┘
-    Nhiều camera (mảng "cameras" trong client_config.json) → mỗi camera một CaptureThread,
-    dùng chung Queue, UploadThread, ConfigThread.
+    Nhiều camera → mỗi camera một CaptureThread, dùng chung Queue, UploadThread, ConfigThread.
+    Danh sách camera mặc định lấy từ Website: admin bật "Client chụp ảnh" ở Camera trực tiếp /
+    Camera IP → ConfigThread nhận qua /api/config → CameraManager mở / dừng luồng chụp lúc đang chạy.
     Main thread: hiện preview của 1 camera (cv2.imshow phải chạy ở luồng chính), nhấn 1/2/.../Tab
     để đổi camera đang xem; chờ tín hiệu dừng.
 
@@ -22,13 +23,14 @@ Mỗi chức năng nằm ở một file riêng (file này chỉ khởi động v
     shared_config.py    SharedConfig: tham số chụp dùng chung giữa các luồng (có Lock)
     capture_thread.py   CaptureThread: đọc frame, chụp, nén JPEG, lưu file + SQLite
     upload_thread.py    UploadThread: gửi ảnh lên Server, retry, gửi bù
-    config_thread.py    ConfigThread: lấy cấu hình từ Server định kỳ
+    config_thread.py    ConfigThread: lấy cấu hình + danh sách camera từ Server định kỳ
+    camera_manager.py   CameraManager: thêm / dừng CaptureThread khi danh sách camera đổi
     video_source.py     VideoSource: mở nguồn RTSP / HTTP / webcam / file / YouTube
     local_store.py      LocalStore: SQLite local (metadata + hàng đợi gửi bù)
 
 Ctrl+C (SIGINT) → set stop_event → các luồng tự thoát vòng lặp → join → giải phóng tài nguyên.
 
-Chạy:  python Client.py                       (dùng client_config.json, chạy mọi camera trong "cameras")
+Chạy:  python Client.py                       (chụp các camera admin bật "Client chụp ảnh" trên Website)
        python Client.py --view nha             (mở cửa sổ xem camera "nha" trước; hoặc --view 2)
        python Client.py --source-type rtsp --source-url rtsp://192.168.1.15:8554/live
        python Client.py --server http://192.168.1.10:5000 --no-preview
@@ -44,13 +46,12 @@ import threading
 import cv2
 import numpy as np
 
-from capture_thread import CaptureThread
+from camera_manager import CameraManager
 from config_thread import ConfigThread
 from local_store import LocalStore
 from settings import DB_PATH, IMAGE_DIR, load_cameras, load_settings, setup_logging
 from shared_config import SharedConfig
 from upload_thread import UploadThread
-from video_source import VideoSource
 
 log = logging.getLogger('client')
 
@@ -59,16 +60,25 @@ KEY_TAB = 9
 
 
 # ===================== CỬA SỔ XEM TRƯỚC =====================
-def pick_view(value, cameras):
+def pick_view(value, threads):
     """--view nhận số thứ tự (1, 2, ...) hoặc id camera; không khớp → camera đầu tiên."""
     if value:
-        ids = [c['id'] for c in cameras]
+        ids = [t.camera_id for t in threads]
         if value in ids:
             return ids.index(value)
-        if value.isdigit() and 1 <= int(value) <= len(cameras):
+        if value.isdigit() and 1 <= int(value) <= len(threads):
             return int(value) - 1
         log.warning('--view "%s" không khớp camera nào (%s) → xem camera 1', value, ', '.join(ids))
     return 0
+
+
+def render_waiting():
+    img = np.zeros((PREVIEW_H, PREVIEW_W, 3), np.uint8)
+    cv2.putText(img, 'Dang cho danh sach camera tu Website...', (20, PREVIEW_H // 2 - 12),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 200, 200), 2)
+    cv2.putText(img, '(admin bat "Chup anh" o Camera truc tiep / Camera IP)', (20, PREVIEW_H // 2 + 20),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (160, 160, 160), 1)
+    return img
 
 
 def render_preview(cam_t, index, total):
@@ -103,10 +113,7 @@ def main():
 
     setup_logging()
     settings = load_settings(args)
-    cameras, declared_ids = load_cameras(settings)
-    if not cameras:
-        log.error('Không có camera nào có URL → kiểm tra "cameras" trong client_config.json và client/.env')
-        return 1
+    from_server = settings['cameras_from_server']
     os.makedirs(IMAGE_DIR, exist_ok=True)
 
     store = LocalStore(DB_PATH)
@@ -114,17 +121,18 @@ def main():
     upload_q = queue.Queue(maxsize=settings['upload_queue_size'])
     enqueued = (set(), threading.Lock())
     stop_event = threading.Event()
-
-    capture_threads = []
-    for cam in cameras:
-        src = cam['source']
-        source = VideoSource(src['type'], src['url'], src.get('rtsp_transport', 'tcp'))
-        capture_threads.append(CaptureThread(cam, settings, source, store, shared_cfg,
-                                             upload_q, enqueued, stop_event))
+    manager = CameraManager(settings, store, shared_cfg, upload_q, enqueued)
 
     log.info('=== Khởi động Client %s ===', settings['client_id'])
-    for i, t in enumerate(capture_threads, 1):
-        log.info('Camera %d: %s (%s) | %s', i, t.camera_id, t.camera_name, t.source.describe())
+    if from_server:
+        log.info('Camera: lấy từ Website (các camera admin bật "Client chụp ảnh"), cập nhật mỗi %ds',
+                 settings['config_poll_interval'])
+    else:
+        cameras, _ = load_cameras(settings)
+        if not cameras:
+            log.error('Không có camera nào có URL → kiểm tra "cameras" trong client_config.json và client/.env')
+            return 1
+        manager.apply(cameras)
     log.info('Server: %s | Cấu hình ban đầu: %s', settings['server_url'], shared_cfg.get())
     log.info('Ảnh chờ gửi bù từ lần chạy trước: %d', store.count_pending())
 
@@ -136,48 +144,60 @@ def main():
     if hasattr(signal, 'SIGTERM'):
         signal.signal(signal.SIGTERM, on_signal)
 
-    threads = capture_threads + [ConfigThread(settings, shared_cfg, stop_event, declared_ids)]
+    threads = [ConfigThread(settings, shared_cfg, stop_event, manager, from_server)]
     if settings['upload_enabled']:
         threads.append(UploadThread(settings, store, upload_q, enqueued, stop_event))
     for t in threads:
         t.start()
 
     window = f"Client {settings['client_id']}"
-    current = pick_view(args.view, cameras)
-    total = len(capture_threads)
-    if settings['show_preview']:
-        capture_threads[current].set_preview_active(True)
-        log.info('Đang xem: %s (nhấn 1-%d hoặc Tab để đổi luồng)', capture_threads[current].camera_name, total)
+    viewing = None          # CaptureThread đang hiện trong cửa sổ xem trước
+    first_pick = True
     try:
         while not stop_event.is_set():
-            if settings['show_preview']:
-                cv2.imshow(window, render_preview(capture_threads[current], current, total))
-                key = cv2.waitKey(50) & 0xFF
-                if key == ord('q'):
-                    log.info('Nhấn q. Thoát...')
-                    stop_event.set()
-                elif key == KEY_TAB or ord('1') <= key < ord('1') + total:
-                    new = (current + 1) % total if key == KEY_TAB else key - ord('1')
-                    if new != current:
-                        capture_threads[current].set_preview_active(False)
-                        capture_threads[new].set_preview_active(True)
-                        current = new
-                        log.info('Đổi luồng xem → %s', capture_threads[current].camera_name)
-                else:
-                    try:
-                        if cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
-                            log.info('Cửa sổ đã đóng. Thoát...')
-                            stop_event.set()
-                    except cv2.error:
-                        pass
-            else:
+            if not settings['show_preview']:
                 stop_event.wait(0.5)
+                continue
+            # Danh sách camera có thể đổi bất cứ lúc nào (admin bật / tắt trên Website)
+            cams = manager.threads()
+            if viewing not in cams:
+                if viewing is not None:
+                    viewing.set_preview_active(False)
+                viewing = None
+                if cams:
+                    viewing = cams[pick_view(args.view, cams) if first_pick else 0]
+                    first_pick = False
+                    viewing.set_preview_active(True)
+                    log.info('Đang xem: %s (nhấn 1-%d hoặc Tab để đổi luồng)', viewing.camera_name, len(cams))
+            if viewing is None:
+                cv2.imshow(window, render_waiting())
+            else:
+                cv2.imshow(window, render_preview(viewing, cams.index(viewing), len(cams)))
+            key = cv2.waitKey(50) & 0xFF
+            total = len(cams)
+            if key == ord('q'):
+                log.info('Nhấn q. Thoát...')
+                stop_event.set()
+            elif viewing is not None and (key == KEY_TAB or ord('1') <= key < ord('1') + total):
+                cur = cams.index(viewing)
+                new = (cur + 1) % total if key == KEY_TAB else key - ord('1')
+                if new != cur:
+                    viewing.set_preview_active(False)
+                    viewing = cams[new]
+                    viewing.set_preview_active(True)
+                    log.info('Đổi luồng xem → %s', viewing.camera_name)
+            else:
+                try:
+                    if cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
+                        log.info('Cửa sổ đã đóng. Thoát...')
+                        stop_event.set()
+                except cv2.error:
+                    pass
     finally:
         stop_event.set()
+        manager.stop_all()
         for t in threads:
             t.join(timeout=15)
-        for t in capture_threads:
-            t.source.release()
         if settings['show_preview']:
             cv2.destroyAllWindows()
         log.info('=== Client đã dừng. Ảnh chờ gửi bù: %d ===', store.count_pending())
