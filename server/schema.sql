@@ -79,3 +79,12 @@ CREATE TABLE IF NOT EXISTS live_streams (
     added_by  VARCHAR(50),
     added_at  DATETIME(3) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Camera IP xem trực tiếp trên trang /ipcam. url có thể chứa mật khẩu camera → Server không gửi ra trình duyệt
+CREATE TABLE IF NOT EXISTS ip_cameras (
+    id        INT AUTO_INCREMENT PRIMARY KEY,
+    name      VARCHAR(100) NOT NULL,
+    url       VARCHAR(500) NOT NULL,
+    added_by  VARCHAR(50),
+    added_at  DATETIME(3) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

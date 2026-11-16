@@ -35,6 +35,8 @@ def me():
 
 @users_bp.route('/api/me/password', methods=['POST'])
 def change_own_password():
+    if g.user.get('guest'):
+        return jsonify({'error': 'Chế độ khách không có mật khẩu'}), 403
     data = request.get_json(silent=True) or {}
     err = _check_password(data.get('new'))
     if err:

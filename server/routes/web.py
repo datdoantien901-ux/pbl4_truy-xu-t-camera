@@ -2,8 +2,10 @@
 Các trang web (template trong server/templates/):
     /login        đăng nhập                 (công khai)
     /logout       đăng xuất (POST)
-    /             gallery real-time         (đăng nhập)
-    /live         camera YouTube trực tiếp  (đăng nhập)
+    /login/guest  vào chế độ khách (chỉ xem) (POST, công khai)
+    /live         camera trực tiếp (YouTube) — trang mặc định
+    /ipcam        camera IP: nhập IP → xem trực tiếp (MJPEG qua Server)
+    /             ảnh Client gửi lên (gallery real-time)
     /manage       quản lý ảnh               (đăng nhập; nút xóa chỉ admin thấy)
     /stats        thống kê độ trễ           (đăng nhập)
     /image/<id>   chi tiết 1 ảnh            (đăng nhập)
@@ -18,7 +20,7 @@ from werkzeug.security import check_password_hash
 
 from auth import admin_required, login_failed, login_locked, login_succeeded
 from db import get_db, to_json
-from settings import log
+from settings import ALLOW_GUEST, log
 from timeutil import now_dt, seconds_between
 
 web_bp = Blueprint('web', __name__)
@@ -26,16 +28,29 @@ web_bp = Blueprint('web', __name__)
 
 def _safe_next(url):
     """Chỉ cho chuyển về đường dẫn nội bộ (/...), chặn chuyển hướng sang trang lạ (open redirect)."""
-    if url and url.startswith('/') and not url.startswith('//') and not urlparse(url).netloc:
+    if url and url.startswith('/') and not url.startswith('//') and not urlparse(url).netloc and url != '/':
         return url
-    return '/'
+    return '/live'   # trang mặc định sau khi vào: Camera trực tiếp
 
 
 @web_bp.route('/login', methods=['GET'])
 def page_login():
-    if session.get('uid'):
-        return redirect('/')
-    return render_template('login.html', next=_safe_next(request.args.get('next')))
+    if session.get('uid') or (session.get('guest') and ALLOW_GUEST):
+        return redirect('/live')
+    return render_template('login.html', next=_safe_next(request.args.get('next')),
+                           allow_guest=ALLOW_GUEST, mode=request.args.get('mode'))
+
+
+@web_bp.route('/login/guest', methods=['POST'])
+def guest_login():
+    """Người xem: vào thẳng, không mật khẩu, chỉ xem."""
+    if not ALLOW_GUEST:
+        return redirect('/login?mode=admin')
+    session.clear()
+    session.permanent = True
+    session['guest'] = True
+    log.info('[AUTH] Khách (chỉ xem) vào từ %s', request.remote_addr)
+    return redirect(_safe_next(request.form.get('next')))
 
 
 @web_bp.route('/login', methods=['POST'])
@@ -46,8 +61,8 @@ def do_login():
 
     wait = login_locked(ip)
     if wait:
-        return render_template('login.html', next=next_url, username=username,
-                               error=f'Sai mật khẩu quá nhiều lần. Thử lại sau {wait} giây.'), 429
+        return render_template('login.html', next=next_url, username=username, allow_guest=ALLOW_GUEST,
+                               mode='admin', error=f'Sai mật khẩu quá nhiều lần. Thử lại sau {wait} giây.'), 429
 
     conn = get_db()
     cur = conn.cursor()
@@ -57,8 +72,8 @@ def do_login():
         conn.close()
         login_failed(ip)
         log.warning('[AUTH] Đăng nhập sai: "%s" từ %s', username, ip)
-        return render_template('login.html', next=next_url, username=username,
-                               error='Sai tên đăng nhập hoặc mật khẩu.'), 401
+        return render_template('login.html', next=next_url, username=username, allow_guest=ALLOW_GUEST,
+                               mode='admin', error='Sai tên đăng nhập hoặc mật khẩu.'), 401
     cur.execute('UPDATE users SET last_login = %s WHERE id = %s', (now_dt(), user['id']))
     conn.commit()
     conn.close()
@@ -75,8 +90,9 @@ def do_login():
 @web_bp.route('/logout', methods=['POST'])
 def logout():
     log.info('[AUTH] %s đăng xuất', g.user['username'])
+    next_mode = '?mode=admin' if g.user.get('guest') and request.form.get('to') == 'admin' else ''
     session.clear()
-    return redirect('/login')
+    return redirect('/login' + next_mode)
 
 
 @web_bp.route('/')
@@ -100,8 +116,15 @@ def page_config():
     return render_template('config.html')
 
 
+@web_bp.route('/ipcam')
+def page_ipcam():
+    return render_template('ipcam.html')
+
+
 @web_bp.route('/account')
 def page_account():
+    if g.user.get('guest'):
+        return redirect('/login?mode=admin')
     return render_template('account.html')
 
 

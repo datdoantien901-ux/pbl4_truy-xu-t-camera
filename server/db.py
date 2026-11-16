@@ -168,6 +168,16 @@ def init_db():
             added_at  DATETIME(3) NOT NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ''')
+    # Camera IP xem trực tiếp trên trang /ipcam (url có thể chứa mật khẩu camera → không gửi ra trình duyệt)
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS ip_cameras (
+            id        INT AUTO_INCREMENT PRIMARY KEY,
+            name      VARCHAR(100) NOT NULL,
+            url       VARCHAR(500) NOT NULL,
+            added_by  VARCHAR(50),
+            added_at  DATETIME(3) NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ''')
     if new_streams_table:   # chỉ nạp danh sách mẫu lần đầu (admin xóa hết thì không nạp lại)
         from youtube import DEFAULT_STREAMS
         cur.executemany('''INSERT IGNORE INTO live_streams (video_id, title, channel, added_by, added_at)

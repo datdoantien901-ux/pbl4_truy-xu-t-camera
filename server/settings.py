@@ -55,6 +55,8 @@ API_KEY = os.getenv('PBL4_API_KEY', '')
 SECRET_KEY = os.getenv('PBL4_SECRET_KEY', '')
 ADMIN_USER = os.getenv('PBL4_ADMIN_USER', 'admin')
 ADMIN_PASSWORD = os.getenv('PBL4_ADMIN_PASSWORD', '')
+# PBL4_ALLOW_GUEST=0 → tắt chế độ "Người xem" không cần mật khẩu (bắt mọi người đăng nhập)
+ALLOW_GUEST = os.getenv('PBL4_ALLOW_GUEST', '1') != '0'
 SESSION_HOURS = 12            # phiên đăng nhập hết hạn sau 12 giờ
 LOGIN_MAX_FAILS = 5           # sai mật khẩu quá 5 lần / 5 phút / 1 IP → tạm khóa
 LOGIN_LOCK_SECONDS = 300

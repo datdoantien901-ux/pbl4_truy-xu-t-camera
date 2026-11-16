@@ -64,8 +64,10 @@ server/
   routes/images.py    API ảnh       /api/images..., /uploads/<file>
   routes/config.py    API cấu hình  /api/config, /api/config/history
   routes/monitor.py   API giám sát  /api/stats, /api/clients, /api/cameras
-  routes/web.py       các trang web /login, /, /live, /manage, /config, /users, /account, /stats, /image/<id>
+  routes/web.py       các trang web /login, /live, /ipcam, /, /manage, /config, /users, /account, /stats, /image/<id>
   routes/streams.py   API camera YouTube  /api/streams...
+  routes/ipcams.py    API camera IP /api/ipcams..., luồng MJPEG /ipcam/<id>/stream
+  ipcam.py            đọc camera IP bằng OpenCV, phát lại MJPEG (1 luồng đọc dùng chung / camera)
   routes/users.py     API tài khoản /api/me, /api/users...
   auth.py             đăng nhập + phân quyền (admin / viewer) + khóa API của Client
   youtube.py          kiểm tra / tìm livestream YouTube bằng yt-dlp
@@ -189,22 +191,41 @@ iPhone / Camera IP ──Wi-Fi/LAN──┐
 
 ## Phân quyền
 
-| Ai | Xác thực bằng | Được làm |
-|---|---|---|
-| **Client** (máy chụp ảnh) | header `X-API-Key` = `PBL4_API_KEY` | gửi ảnh, lấy cấu hình |
-| **viewer** (người xem) | đăng nhập Website | xem ảnh, camera YouTube, thống kê; tự đổi mật khẩu |
-| **admin** (quản trị viên) | đăng nhập Website | như viewer + xóa ảnh, đổi cấu hình, quản lý người dùng, thêm/xóa camera YouTube |
+Trang đăng nhập cho chọn vai trò trước:
 
-- Mặc định từ chối: mọi trang và API đều phải đăng nhập, trừ `/login`, `/static/…` và 2 API của Client. Ảnh trong `/uploads/` cũng cần đăng nhập.
+| Ai | Vào bằng | Được làm |
+|---|---|---|
+| **Người xem** | bấm *Người xem* — vào thẳng, **không cần mật khẩu** | chỉ xem: camera trực tiếp, camera IP, ảnh, thống kê |
+| **Quản trị viên** | bấm *Quản trị viên* → nhập mật khẩu | mọi chức năng: xóa ảnh, đổi cấu hình, thêm/xóa camera, quản lý người dùng |
+| **Client** (máy chụp ảnh) | header `X-API-Key` = `PBL4_API_KEY` | gửi ảnh, lấy cấu hình |
+
+- Đang ở chế độ Người xem, bấm nút **Quản trị** ở cuối thanh bên trái để chuyển sang đăng nhập quản trị.
+- Muốn bắt mọi người phải có mật khẩu: đặt `PBL4_ALLOW_GUEST=0` trong `server/.env` (tài khoản quyền `viewer` tạo ở trang Người dùng vẫn đăng nhập được).
+
+- Mặc định từ chối: mọi trang và API đều phải vào (khách hoặc đăng nhập), trừ `/login`, `/static/…` và 2 API của Client. Ảnh trong `/uploads/` cũng cần đăng nhập.
 - Mật khẩu lưu dạng băm (werkzeug). Cookie phiên có `HttpOnly`, `SameSite=Lax` (chống CSRF) và hết hạn sau 12 giờ. Đăng nhập sai 5 lần trong 5 phút từ một IP thì IP đó bị khóa 5 phút. Admin đổi quyền hoặc xóa tài khoản thì phiên của tài khoản đó mất hiệu lực ngay.
 - **Hạn chế:** Server chạy HTTP thường nên mật khẩu và khóa API đi qua mạng ở dạng rõ. Khi triển khai thật cần HTTPS (TLS), ví dụ đặt Server sau nginx có chứng chỉ.
 
-## Camera YouTube (`/live`)
+## Camera trực tiếp (`/live`)
 
-Xem trực tiếp livestream YouTube ngay trên Website bằng khung nhúng (`youtube-nocookie.com/embed`). Trình duyệt tải video thẳng từ YouTube, Server chỉ lưu danh sách link (bảng `live_streams`).
+Trang mặc định sau khi vào. Xem trực tiếp livestream YouTube ngay trên Website bằng khung nhúng (`youtube-nocookie.com/embed`). Trình duyệt tải video thẳng từ YouTube, Server chỉ lưu danh sách link (bảng `live_streams`).
 - Chọn camera ở danh sách bên phải, hoặc bật **Xem nhiều camera cùng lúc** (lưới, tối đa 6).
 - Admin dán link (`watch?v=`, `youtu.be/`, `/live/`) → Server dùng **yt-dlp** kiểm tra video có tồn tại và có cho nhúng không. Admin cũng có thể **tìm camera đang phát** theo từ khóa (bộ lọc "Trực tiếp" của YouTube); kết quả đánh dấu link không cho nhúng.
 - Lần chạy đầu, Server nạp sẵn 10 camera mẫu đã kiểm tra (Đà Nẵng, Hà Nội, Nha Trang, Tokyo, Mỹ…). Livestream có thể dừng bất cứ lúc nào: dùng nút *Kiểm tra còn phát*, rồi xóa hoặc thêm link khác.
+
+## Camera IP (`/ipcam`)
+
+Xem trực tiếp camera trong mạng LAN chỉ bằng địa chỉ IP. Trình duyệt không mở được RTSP, nên **Server làm trung gian**:
+
+```
+Camera IP ──RTSP / HTTP──▶ Server (OpenCV đọc khung, nén JPEG) ──MJPEG qua HTTP──▶ trình duyệt (<img>)
+```
+
+- Admin chọn **loại camera** (Imou/Dahua, Ezviz, Hikvision, TP-Link Tapo, RTSP chung, điện thoại Android app IP Webcam) rồi nhập **IP**, cổng, tài khoản / mật khẩu camera → Server tự ghép đường dẫn luồng. Cũng có thể dán URL đầy đủ (`rtsp://…`, `http://…`).
+- **Thử kết nối** chụp 1 khung để kiểm tra trước khi lưu (IP sai → báo lỗi sau khoảng 6 giây). **Lưu và xem** → mọi người (cả Người xem) xem được.
+- Mỗi camera chỉ có **1 luồng đọc** dùng chung cho mọi người đang xem (đồng bộ bằng `threading.Condition`); không ai xem 20 giây thì Server tự đóng camera. Phát tối đa 10 khung/giây, rộng 960 px.
+- Mật khẩu camera chỉ lưu trên Server; trình duyệt chỉ thấy `rtsp://admin:***@…`. Chỉ admin được nhập IP mới (tránh người ngoài dùng Server dò các máy khác trong mạng).
+- Trình duyệt chỉ mở khoảng 6 kết nối tới một Server → trang tự phát tối đa 4 camera, camera khác bấm *Xem*.
 
 ## REST API
 
@@ -221,6 +242,11 @@ Xem trực tiếp livestream YouTube ngay trên Website bằng khung nhúng (`yo
 | GET | `/api/clients` | viewer | Client đang kết nối (IP, lần cuối hoạt động) |
 | GET | `/api/cameras` | viewer | Các camera (đã gửi ảnh hoặc Client khai báo): `id`, `image_count`, `last_capture`, `clients` — dùng cho ô chọn camera trên Website |
 | GET | `/api/streams` | viewer | Danh sách livestream YouTube |
+| GET | `/api/ipcams` · `/api/ipcams/presets` | viewer | Camera IP đã lưu (URL ẩn mật khẩu) · các loại camera |
+| POST | `/api/ipcams/test` | admin | Thử kết nối `{preset, ip, port, user, password}` hoặc `{url}` → 1 ảnh JPEG |
+| POST / DELETE | `/api/ipcams`, `/api/ipcams/<id>` | admin | Lưu (`name` + như trên) / xóa camera IP |
+| GET | `/ipcam/<id>/stream` | viewer | Luồng MJPEG (`multipart/x-mixed-replace`) để hiển thị bằng `<img>` |
+| GET | `/api/ipcams/<id>/status` | viewer | Luồng đọc đang chạy, số người xem, lỗi kết nối |
 | POST | `/api/streams` | admin | Thêm link `{url}` (Server kiểm tra bằng yt-dlp) |
 | DELETE | `/api/streams/<id>` | admin | Xóa link |
 | GET | `/api/streams/<id>/check` | viewer | Link còn phát trực tiếp không |
@@ -229,7 +255,7 @@ Xem trực tiếp livestream YouTube ngay trên Website bằng khung nhúng (`yo
 | GET / POST | `/api/users` | admin | Danh sách / tạo tài khoản `{username, password, role}` |
 | PATCH / DELETE | `/api/users/<id>` | admin | Đổi quyền, đặt lại mật khẩu `{role?, password?}` / xóa |
 
-"Quyền viewer" nghĩa là mọi tài khoản đã đăng nhập. Chưa đăng nhập thì API trả `401`, không đủ quyền thì trả `403`.
+"Quyền viewer" nghĩa là đã vào (khách hoặc tài khoản). Chưa đăng nhập thì API trả `401`, không đủ quyền thì trả `403`.
 
 ## Kiểm thử
 
