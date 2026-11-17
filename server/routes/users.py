@@ -3,17 +3,18 @@ API tài khoản:
     GET    /api/me                     người dùng đang đăng nhập             (đăng nhập)
     POST   /api/me/password            tự đổi mật khẩu {old, new}            (đăng nhập)
     GET    /api/users                  danh sách tài khoản                   (admin)
-    POST   /api/users                  tạo tài khoản {username, password, role}  (admin)
-    PATCH  /api/users/<id>             đổi quyền / đặt lại mật khẩu {role?, password?}  (admin)
+    POST   /api/users                  tạo tài khoản quản trị {username, password}  (admin)
+    PATCH  /api/users/<id>             nâng lên admin / đặt lại mật khẩu {role?: 'admin', password?}  (admin)
     DELETE /api/users/<id>             xóa tài khoản                         (admin)
-Không cho admin tự xóa / tự hạ quyền mình, không xóa admin cuối cùng (tránh mất quyền quản trị).
+Chỉ tạo tài khoản quản trị; người xem dùng chế độ khách (không cần tài khoản).
+Không cho admin tự xóa mình, không xóa admin cuối cùng (tránh mất quyền quản trị).
 """
 import re
 
 from flask import Blueprint, g, jsonify, request
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from auth import ROLES, admin_required
+from auth import admin_required
 from db import get_db, to_json
 from settings import log
 from timeutil import now_dt
@@ -72,11 +73,9 @@ def list_users():
 def create_user():
     data = request.get_json(silent=True) or {}
     username = (data.get('username') or '').strip()
-    role = data.get('role', 'viewer')
+    role = 'admin'   # chỉ tạo tài khoản quản trị; người xem vào bằng chế độ khách
     if not re.fullmatch(r'[A-Za-z0-9_.-]{3,50}', username):
         return jsonify({'error': 'Tên đăng nhập 3–50 ký tự, chỉ gồm chữ không dấu, số, . _ -'}), 400
-    if role not in ROLES:
-        return jsonify({'error': 'Quyền phải là admin hoặc viewer'}), 400
     err = _check_password(data.get('password'))
     if err:
         return jsonify({'error': err}), 400
@@ -115,12 +114,9 @@ def update_user(user_id):
 
     changes = []
     if 'role' in data and data['role'] != user['role']:
-        if data['role'] not in ROLES:
+        if data['role'] != 'admin':   # chỉ cho nâng tài khoản người xem cũ lên admin, không hạ quyền
             conn.close()
-            return jsonify({'error': 'Quyền phải là admin hoặc viewer'}), 400
-        if user_id == g.user['id']:
-            conn.close()
-            return jsonify({'error': 'Không tự hạ quyền của chính mình'}), 400
+            return jsonify({'error': 'Chỉ có thể nâng tài khoản lên quản trị viên'}), 400
         cur.execute('UPDATE users SET role = %s WHERE id = %s', (data['role'], user_id))
         changes.append(f"quyền → {data['role']}")
     if data.get('password'):
