@@ -16,6 +16,8 @@ Mỗi chức năng nằm ở một file riêng:
     routes/users.py     API tài khoản /api/me, /api/users...
     auth.py             đăng nhập (admin / viewer) + khóa API của Client
     youtube.py          kiểm tra / tìm livestream YouTube bằng yt-dlp
+    routes/apidocs.py   tài liệu API Swagger  /apidocs, /api/openapi.json
+    openapi.py          đặc tả OpenAPI 3.0 của mọi API (sửa API thì sửa cả ở đây)
 
 CSDL: MySQL, cấu hình qua biến môi trường MYSQL_HOST, MYSQL_PORT, MYSQL_USER,
       MYSQL_PASSWORD, MYSQL_DATABASE (database và bảng tự tạo khi chạy).
@@ -30,6 +32,7 @@ from flask import Flask
 
 import auth
 from db import init_db
+from routes.apidocs import apidocs_bp
 from routes.config import config_bp
 from routes.images import images_bp
 from routes.ipcams import ipcams_bp
@@ -47,7 +50,7 @@ app.config.update(
     SESSION_COOKIE_SAMESITE='Lax',    # trang web lạ không gửi kèm cookie khi POST/DELETE (chống CSRF)
 )
 # Không bật CORS: Website và API cùng một địa chỉ, trang web khác không được gọi API bằng phiên đăng nhập
-for bp in (images_bp, config_bp, monitor_bp, streams_bp, ipcams_bp, users_bp, web_bp):
+for bp in (images_bp, config_bp, monitor_bp, streams_bp, ipcams_bp, users_bp, web_bp, apidocs_bp):
     app.register_blueprint(bp)
 auth.init_app(app)
 if not SECRET_KEY:

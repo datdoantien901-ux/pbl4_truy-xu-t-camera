@@ -246,6 +246,8 @@ Camera IP ──RTSP / HTTP──▶ Server (OpenCV đọc khung, nén JPEG) ─
 
 ## REST API
 
+Xem đầy đủ và gọi thử trên Website: mục **Tài liệu API** (`/apidocs`, Swagger UI; đặc tả OpenAPI ở `/api/openapi.json`, nội dung trong `server/openapi.py`).
+
 | Method | Endpoint | Quyền | Mô tả |
 |---|---|---|---|
 | POST | `/api/images` | Client | Nhận ảnh (multipart: `file`, `capture_time`, `sent_time`, `width`, `height`, `client_id`, ...) |

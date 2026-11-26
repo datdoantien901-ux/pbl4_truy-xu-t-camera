@@ -60,6 +60,7 @@ Mỗi chức năng một file — sửa lỗi chức năng nào thì vào đúng
 
 ### Server (`server/`)
 - `Server.py` chỉ tạo Flask app và đăng ký 6 Blueprint: `routes/images.py` (`/api/images…`, `/uploads/…`), `routes/config.py` (`/api/config…`), `routes/monitor.py` (`/api/stats`, `/api/clients`, `/api/cameras`), `routes/streams.py` (`/api/streams…`, camera YouTube), `routes/ipcams.py` (`/api/ipcams…`, `/ipcam/<id>/stream`), `routes/users.py` (`/api/me`, `/api/users…`), `routes/web.py` (các trang HTML, `/login`).
+- **Tài liệu API** (`openapi.py` → Swagger UI `/apidocs`, `routes/apidocs.py`): đặc tả viết tay — **thêm / sửa API thì sửa cả `openapi.py`**.
 - **Phân quyền** (`auth.py`): `guard()` chạy trước mọi request — **mặc định bắt đăng nhập**, trừ `PUBLIC_ENDPOINTS` (login, static) và `CLIENT_ENDPOINTS` (upload ảnh, lấy config: kiểm tra header `X-API-Key` = `PBL4_API_KEY`). Route chỉ cho admin gắn `@admin_required`. Template có sẵn `current_user`, `is_admin`; JS có `IS_ADMIN` (chỉ để ẩn nút, Server vẫn kiểm tra). Thêm route mới → xác định ai được gọi.
 - **Khách**: `/login/guest` đặt `session['guest']` → `g.user = auth.GUEST` (`id=None`, role `viewer`, `guest: True`); route dùng `g.user['id']` phải chặn khách. `PBL4_ALLOW_GUEST=0` tắt.
 - `ipcam.py`: camera IP → OpenCV (RTSP ép TCP, timeout 6 s) → MJPEG. `StreamHub` giữ 1 `CameraReader` (thread) / camera, người xem chờ khung mới qua `threading.Condition`, không ai xem 20 s thì đóng. URL camera (có mật khẩu) không gửi ra trình duyệt (`mask_url`).
