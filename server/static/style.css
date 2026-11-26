@@ -235,7 +235,7 @@ input:focus, select:focus { border-color: var(--sign); outline: none; box-shadow
 .guide .tag { font-size: .72rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px; background: var(--sign-tint); color: var(--sign); }
 
 /* ---------- Thống kê ---------- */
-.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .metric { padding: 1.1rem 1.25rem; border-right: 1px solid var(--line); }
 .metric:last-child { border-right: 0; }
 .metric-name { font-size: .85rem; color: var(--ink-soft); }
@@ -254,7 +254,24 @@ input:focus, select:focus { border-color: var(--sign); outline: none; box-shadow
 /* ---------- Chi tiết ảnh ---------- */
 .detail { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 1.5rem; align-items: start; }
 .detail-frame { background: #1e2a33; border-radius: var(--radius); overflow: hidden; }
-.detail-frame img { width: 100%; }
+.detail-frame img { width: 100%; display: block; }
+
+/* ---------- Khung vật thể YOLOv5 (trang chi tiết ảnh) ---------- */
+.boxed { position: relative; }
+.obj-box { position: absolute; border: 2px solid hsl(calc(var(--c) * 47 + 190) 85% 55%); border-radius: 2px; pointer-events: none; }
+.obj-box span {
+  position: absolute; left: -2px; bottom: 100%; white-space: nowrap; font-size: .72rem; font-weight: 600;
+  padding: 0 .3rem; color: #fff; background: hsl(calc(var(--c) * 47 + 190) 70% 38%); border-radius: 2px 2px 0 0;
+}
+.obj-box.hot { border-width: 3px; box-shadow: 0 0 0 9999px rgba(0,0,0,.35); z-index: 2; }
+.hide-boxes .obj-box { display: none; }
+.box-toggle { margin-top: .6rem; }
+.obj-list { list-style: none; margin: 0 0 .5rem; padding: 0; display: flex; flex-direction: column; gap: .3rem; font-size: .9rem; }
+.obj-list li { display: flex; align-items: center; gap: .5rem; cursor: default; }
+.obj-list li span:last-child { margin-left: auto; color: var(--ink-soft); }
+.obj-dot { width: 10px; height: 10px; border-radius: 2px; background: hsl(calc(var(--c) * 47 + 190) 85% 55%); flex-shrink: 0; }
+.muted.small { font-size: .82rem; margin: 0 0 1rem; }
+table.data td.objs { font-size: .85rem; max-width: 220px; }
 .detail-info { padding: 1.25rem 1.4rem; }
 .detail-info h2 { font-size: 1rem; margin: 1.1rem 0 .6rem; }
 .detail-info h2:first-child { margin-top: 0; }
@@ -402,8 +419,8 @@ input[type=password], input[type=url], input[type=search] {
   .user-form { grid-template-columns: 1fr 1fr; }
   .latest-info { border-left: 0; border-top: 1px solid var(--line); }
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .metric:nth-child(2) { border-right: 0; }
-  .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+  .metric:nth-child(2n) { border-right: 0; }
+  .metric:nth-child(-n+4) { border-bottom: 1px solid var(--line); }
 }
 @media (max-width: 760px) {
   .shell { grid-template-columns: minmax(0, 1fr); }

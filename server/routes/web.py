@@ -22,6 +22,7 @@ from werkzeug.security import check_password_hash
 
 from auth import _load_user, admin_required, login_failed, login_locked, login_succeeded
 from db import get_db, to_json
+from routes.images import image_detections
 from settings import ALLOW_GUEST, log
 from timeutil import now_dt, seconds_between
 
@@ -158,11 +159,13 @@ def page_detail(image_id):
     cur = conn.cursor()
     cur.execute('SELECT * FROM images WHERE id = %s', (image_id,))
     row = cur.fetchone()
-    conn.close()
     if row is None:
+        conn.close()
         abort(404)
+    detections = image_detections(cur, image_id)
+    conn.close()
     # detail.html cắt chuỗi thời gian (capture_time[8:10]) → phải truyền chuỗi ISO, không truyền datetime
     img = to_json(row)
     img['capture_to_received'] = seconds_between(row['capture_time'], row['received_time'])
     img['capture_to_display'] = seconds_between(row['capture_time'], row.get('displayed_time'))
-    return render_template('detail.html', image=img)
+    return render_template('detail.html', image=img, detections=detections)

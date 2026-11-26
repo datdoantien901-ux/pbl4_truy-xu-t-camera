@@ -30,7 +30,7 @@
 <div class="panel table-wrap">
   <table class="data">
     <thead><tr><th>Ảnh</th><th>Client</th><th>Chụp lúc</th><th class="num">Tần suất cấu hình</th><th class="num">Tần suất thực tế</th>
-               <th class="num">Truyền mạng</th><th class="num">Chụp → nhận</th><th class="num">Chụp → hiển thị</th><th class="num">KB</th></tr></thead>
+               <th class="num">Truyền mạng</th><th class="num">Chụp → nhận</th><th class="num">Chụp → hiển thị</th><th class="num">YOLOv5</th><th class="num">KB</th></tr></thead>
     <tbody id="items"></tbody>
   </table>
 </div>
@@ -42,6 +42,7 @@ const METRICS = [
   ['capture_to_received', 'Chụp → server nhận', 'gồm xử lý ảnh và chờ gửi'],
   ['capture_to_display',  'Chụp → hiển thị', 'thời gian người xem thấy ảnh'],
   ['actual_gap',          'Tần suất thực tế', 'khoảng cách giữa 2 lần chụp'],
+  ['detect_time',         'YOLOv5 nhận diện', 'thời gian chạy mô hình / ảnh'],
 ];
 let last = null;
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -102,7 +103,7 @@ function renderTable(items) {
   const tb = document.getElementById('items');
   tb.replaceChildren();
   if (!items.length)
-    tb.append(el('tr', {}, el('td', {colspan: 9}, el('div', {class: 'empty'}, 'Chưa có ảnh nào. Chạy Client để có số liệu.'))));
+    tb.append(el('tr', {}, el('td', {colspan: 10}, el('div', {class: 'empty'}, 'Chưa có ảnh nào. Chạy Client để có số liệu.'))));
   for (const it of items) {
     const off = it.actual_gap !== null && it.interval_used && Math.abs(it.actual_gap - it.interval_used) > 1;
     tb.append(el('tr', {},
@@ -114,6 +115,7 @@ function renderTable(items) {
       el('td', {class: 'num'}, fmtSec(it.sent_to_received)),
       el('td', {class: 'num'}, fmtSec(it.capture_to_received)),
       el('td', {class: 'num'}, fmtSec(it.capture_to_display)),
+      el('td', {class: 'num'}, fmtSec(it.detect_time)),
       el('td', {class: 'num'}, it.file_size_kb)));
   }
 }

@@ -25,8 +25,23 @@ CREATE TABLE IF NOT EXISTS images (
     source            VARCHAR(255),
     interval_used     INT,
     quality_used      INT,
+    detected_time     DATETIME(3) NULL,     -- YOLOv5 nhận diện xong (NULL = chưa)
+    detect_ms         DOUBLE NULL,          -- thời gian chạy YOLOv5 (ms)
+    object_count      INT NULL,             -- số vật thể tìm thấy
     INDEX idx_capture_time (capture_time),
-    INDEX idx_images_client_capture (client_id, client_capture_id)
+    INDEX idx_images_client_capture (client_id, client_capture_id),
+    INDEX idx_images_detected (detected_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Vật thể YOLOv5 tìm thấy (tọa độ pixel ảnh gốc). Xóa ảnh → tự xóa theo
+CREATE TABLE IF NOT EXISTS detections (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    image_id   INT NOT NULL,
+    label      VARCHAR(30) NOT NULL,        -- tên loại COCO: person, car, motorcycle...
+    confidence FLOAT NOT NULL,
+    x1 INT NOT NULL, y1 INT NOT NULL, x2 INT NOT NULL, y2 INT NOT NULL,
+    INDEX idx_det_label (label, image_id),
+    FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS config (

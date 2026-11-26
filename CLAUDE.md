@@ -22,6 +22,7 @@ Người dùng là sinh viên, giao tiếp bằng **tiếng Việt**. Comment, l
 ```powershell
 # Cài đặt
 cd server; pip install -r requirements.txt      # Flask, PyMySQL, cryptography, yt-dlp, opencv-python
+cd server; python detector.py --download        # mô hình YOLOv5 (14 MB) vào server/models/
 cd client; pip install -r requirements.txt      # opencv-python, requests, yt-dlp
 
 # Server (máy này: MySQL80 chạy ở cổng 3307, KHÔNG phải 3306)
@@ -60,6 +61,7 @@ Mỗi chức năng một file — sửa lỗi chức năng nào thì vào đúng
 
 ### Server (`server/`)
 - `Server.py` chỉ tạo Flask app và đăng ký 6 Blueprint: `routes/images.py` (`/api/images…`, `/uploads/…`), `routes/config.py` (`/api/config…`), `routes/monitor.py` (`/api/stats`, `/api/clients`, `/api/cameras`), `routes/streams.py` (`/api/streams…`, camera YouTube), `routes/ipcams.py` (`/api/ipcams…`, `/ipcam/<id>/stream`), `routes/users.py` (`/api/me`, `/api/users…`), `routes/web.py` (các trang HTML, `/login`).
+- **YOLOv5** (`detector.py`): `POST /api/images` gọi `detector.worker.submit(id)` → `queue.Queue` → 1 luồng `YoloWorker` (duy nhất dùng `cv2.dnn.Net`) ghi bảng `detections` + `images.detected_time/detect_ms/object_count`; quét bù ảnh `detected_time IS NULL`. Mô hình `server/models/yolov5s.onnx` không commit (`python detector.py --download`); thiếu mô hình thì Server vẫn chạy, chỉ cảnh báo. API: `routes/detect.py`.
 - **Tài liệu API** (`openapi.py` → Swagger UI `/apidocs`, `routes/apidocs.py`): đặc tả viết tay — **thêm / sửa API thì sửa cả `openapi.py`**.
 - **Phân quyền** (`auth.py`): `guard()` chạy trước mọi request — **mặc định bắt đăng nhập**, trừ `PUBLIC_ENDPOINTS` (login, static) và `CLIENT_ENDPOINTS` (upload ảnh, lấy config: kiểm tra header `X-API-Key` = `PBL4_API_KEY`). Route chỉ cho admin gắn `@admin_required`. Template có sẵn `current_user`, `is_admin`; JS có `IS_ADMIN` (chỉ để ẩn nút, Server vẫn kiểm tra). Thêm route mới → xác định ai được gọi.
 - **Khách**: `/login/guest` đặt `session['guest']` → `g.user = auth.GUEST` (`id=None`, role `viewer`, `guest: True`); route dùng `g.user['id']` phải chặn khách. `PBL4_ALLOW_GUEST=0` tắt.
@@ -69,7 +71,7 @@ Mỗi chức năng một file — sửa lỗi chức năng nào thì vào đúng
 - Module dùng chung: `settings.py` (đường dẫn, `MYSQL_CONFIG`, `CONFIG_LIMITS`, `log`), `timeutil.py` (thời gian), `db.py` (`get_db`, `init_db`, `to_json`, `touch_client`), `storage.py` (`cleanup_old_images`, `remove_file`, `looks_like_image`). Import kiểu tuyệt đối (`from db import get_db`) — chạy từ thư mục `server/`.
 - Mỗi request mở **một kết nối MySQL riêng** (`get_db()`, `DictCursor`) → an toàn với `threaded=True`.
 - `init_db()` (trong `db.py`) được `Server.py` gọi khi import: tạo database, tạo bảng, **tự thêm cột thiếu / nâng `DATETIME` → `DATETIME(3)`** cho DB cũ (qua `information_schema`). Đổi schema thì sửa cả `init_db()`, `schema.sql` và `migrate_sqlite_to_mysql.py`.
-- Bảng: `images`, `config` (đúng 1 dòng id=1), `config_history`, `clients`, `users` (role `admin`/`viewer`, mật khẩu băm), `live_streams` (link YouTube cho trang `/live`), `ip_cameras` (camera IP cho trang `/ipcam`). Camera = cột `images.source` (id camera do Client gửi); `clients.cameras` = danh sách id camera Client khai báo (gửi qua `GET /api/config?cameras=`), `/api/cameras` gộp cả hai cho ô chọn camera trên Website.
+- Bảng: `images`, `config` (đúng 1 dòng id=1), `config_history`, `clients`, `users` (role `admin`/`viewer`, mật khẩu băm), `live_streams` (link YouTube cho trang `/live`), `ip_cameras` (camera IP cho trang `/ipcam`), `detections` (vật thể YOLOv5, FK → `images` ON DELETE CASCADE). Camera = cột `images.source` (id camera do Client gửi); `clients.cameras` = danh sách id camera Client khai báo (gửi qua `GET /api/config?cameras=`), `/api/cameras` gộp cả hai cho ô chọn camera trên Website.
 - Chống nhận trùng: cùng `(client_id, client_capture_id, capture_time)` → trả lại bản ghi cũ với `duplicate: true`.
 - `cleanup_old_images()` xóa ảnh cũ nhất khi vượt `config.max_images`.
 - Giới hạn tham số cấu hình nằm ở `CONFIG_LIMITS`.

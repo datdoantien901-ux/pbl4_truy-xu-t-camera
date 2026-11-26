@@ -61,6 +61,13 @@ SESSION_HOURS = 12            # phiên đăng nhập hết hạn sau 12 giờ
 LOGIN_MAX_FAILS = 5           # sai mật khẩu quá 5 lần / 5 phút / 1 IP → tạm khóa
 LOGIN_LOCK_SECONDS = 300
 
+# --- Nhận diện vật thể YOLOv5 (detector.py) ---
+# PBL4_YOLO=0 tắt; PBL4_YOLO_MODEL đường dẫn file .onnx; PBL4_YOLO_CONF ngưỡng tin cậy (0–1)
+YOLO_ENABLED = os.getenv('PBL4_YOLO', '1') != '0'
+YOLO_MODEL = os.getenv('PBL4_YOLO_MODEL', os.path.join(BASE_DIR, 'models', 'yolov5s.onnx'))
+YOLO_CONF = float(os.getenv('PBL4_YOLO_CONF', 0.35))
+YOLO_IOU = 0.45               # 2 khung cùng loại trùng nhau quá 45% → coi là 1 vật thể
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(LOG_DIR, exist_ok=True)
 

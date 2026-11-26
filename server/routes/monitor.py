@@ -93,6 +93,8 @@ def stats():
       sent_to_received    : Client bắt đầu gửi → Server nhận xong (thời gian truyền qua mạng)
       capture_to_display  : chụp → ảnh hiện trên Website
       actual_gap          : khoảng cách thực tế giữa 2 lần chụp của cùng 1 camera (so với interval_used)
+      detect_time         : thời gian chạy YOLOv5 trên ảnh
+      received_to_detected: Server nhận → có kết quả YOLOv5 (gồm chờ trong hàng đợi)
     Lưu ý: Client và Server ở 2 máy khác nhau phải đồng bộ đồng hồ (NTP) thì số liệu mới đúng.
     """
     limit = min(max(2, request.args.get('limit', 100, type=int)), 1000)
@@ -124,6 +126,9 @@ def stats():
             'capture_to_received': seconds_between(r['capture_time'], r['received_time']),
             'sent_to_received': seconds_between(r.get('sent_time'), r['received_time']),
             'capture_to_display': seconds_between(r['capture_time'], r.get('displayed_time')),
+            # YOLOv5: thời gian chạy mô hình, và nhận ảnh → có kết quả (gồm thời gian chờ trong hàng đợi)
+            'detect_time': round(r['detect_ms'] / 1000, 3) if r.get('detect_ms') is not None else None,
+            'received_to_detected': seconds_between(r['received_time'], r.get('detected_time')),
             'file_size_kb': r['file_size_kb'],
         })
     items.reverse()
@@ -132,6 +137,7 @@ def stats():
         'total_images': total,
         'sample_size': len(items),
         'summary': {k: _summary([i[k] for i in items])
-                    for k in ('capture_to_received', 'sent_to_received', 'capture_to_display', 'actual_gap')},
+                    for k in ('capture_to_received', 'sent_to_received', 'capture_to_display', 'actual_gap',
+                          'detect_time', 'received_to_detected')},
         'items': items,
     })

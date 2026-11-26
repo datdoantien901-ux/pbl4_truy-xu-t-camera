@@ -117,7 +117,20 @@ SCHEMAS = {
         client_id=s(example='client-01'), client_capture_id=i('Số thứ tự ảnh phía Client', 42),
         client_ip=s(example='192.168.1.12'), original_name=s(example='cam1_000042.jpg'),
         source=s('Id camera', 'yt-abcDEF12345'),
-        interval_used=i('Tần suất chụp lúc đó (giây)', 5), quality_used=i('Chất lượng JPEG lúc đó', 80)),
+        interval_used=i('Tần suất chụp lúc đó (giây)', 5), quality_used=i('Chất lượng JPEG lúc đó', 80),
+        detected_time=t('YOLOv5 nhận diện xong (null = chưa)'), detect_ms=n('Thời gian chạy YOLOv5 (ms)', 64.2),
+        object_count=i('Số vật thể tìm thấy', 4),
+        objects={'type': 'object', 'additionalProperties': {'type': 'integer'},
+                 'description': 'Chỉ có trong danh sách: số vật thể theo loại', 'example': {'car': 3, 'motorcycle': 1}}),
+    'ImageDetail': {'allOf': [ref('Image'), obj(detections=arr(ref('Detection')))]},
+    'Detection': obj(label=s('Tên loại COCO', 'car'), name=s('Tên tiếng Việt', 'Ô tô'),
+                     confidence=n('Độ tin cậy 0–1', 0.9), x1=i(example=242), y1=i(example=182),
+                     x2=i(example=400), y2=i(example=323)) | {'description': 'Khung vật thể, tọa độ pixel ảnh gốc'},
+    'DetectStatus': obj(enabled=b('Luồng YOLOv5 đang chạy'), reason=s('Lý do không chạy', nullable=True),
+                        model=s(example='yolov5s.onnx'), confidence=n('Ngưỡng tin cậy', 0.35),
+                        queue=i('Ảnh đang chờ trong hàng đợi', 0), processed=i('Đã xử lý từ lúc Server chạy', 100),
+                        avg_ms=n(example=62.5), last_error=s(nullable=True),
+                        pending=i('Ảnh chưa nhận diện trong CSDL', 0), detected=i(example=100)),
     'UploadResult': obj(
         id=i(example=128), file_name=s(example='20261126_091530_a1b2c3.jpg'),
         file_path=s(example='uploads/20261126_091530_a1b2c3.jpg'), file_size_kb=n(example=84.25),
@@ -154,12 +167,16 @@ SCHEMAS = {
     'Stats': obj(
         total_images=i(example=245), sample_size=i(example=50),
         summary=obj(capture_to_received=ref('LatencySummary'), sent_to_received=ref('LatencySummary'),
-                    capture_to_display=ref('LatencySummary'), actual_gap=ref('LatencySummary')),
+                    capture_to_display=ref('LatencySummary'), actual_gap=ref('LatencySummary'),
+                    detect_time=ref('LatencySummary'), received_to_detected=ref('LatencySummary')),
         items=arr(obj(id=i(), client_id=s(), source=s(), capture_time=t(), interval_used=i(),
                       actual_gap=n('Khoảng cách thực tế với lần chụp trước của cùng camera (giây)'),
                       capture_to_received=n('Chụp → Server nhận (giây)'),
                       sent_to_received=n('Thời gian truyền qua mạng (giây)'),
-                      capture_to_display=n('Chụp → hiển thị trên Website (giây)'), file_size_kb=n()))),
+                      capture_to_display=n('Chụp → hiển thị trên Website (giây)'),
+                      detect_time=n('Thời gian chạy YOLOv5 (giây)'),
+                      received_to_detected=n('Server nhận → có kết quả YOLOv5, gồm chờ hàng đợi (giây)'),
+                      file_size_kb=n()))),
     'Stream': obj(id=i(example=1), video_id=s(example='abcDEF12345'), title=s(example='Camera ngã tư'),
                   channel=s(example='Kênh giao thông'), added_by=s(example='admin'), added_at=t(),
                   capture=i('1 = Client chụp ảnh từ camera này', 0, enum=[0, 1])),
@@ -183,8 +200,8 @@ SCHEMAS = {
 }
 
 # ---------------------------------------------------------------- các API
-IMG, CFG, MON, YT, IPC, USR, AUTH = ('Ảnh', 'Cấu hình', 'Giám sát', 'Camera YouTube', 'Camera IP',
-                                     'Tài khoản', 'Đăng nhập')
+IMG, CFG, MON, YT, IPC, USR, AUTH, DET = ('Ảnh', 'Cấu hình', 'Giám sát', 'Camera YouTube', 'Camera IP',
+                                          'Tài khoản', 'Đăng nhập', 'Nhận diện YOLOv5')
 
 PATHS = {
     # ---------- Ảnh ----------
@@ -208,10 +225,11 @@ PATHS = {
             q('camera', s(), 'Id camera (cột source)'),
             q('start', s(example='2026-11-26T08:00:00'), 'Chụp từ'),
             q('end', s(example='2026-11-26T18:00:00'), 'Chụp đến'),
-            q('q', s(), 'Tìm trong tên file / tên Client')]),
+            q('q', s(), 'Tìm trong tên file / tên Client'),
+            q('object', s(example='person'), 'Chỉ ảnh có vật thể loại này (YOLOv5: person, car, motorcycle...)')]),
     },
     '/api/images/{id}': {
-        'get': op(IMG, 'Chi tiết một ảnh', LOGIN, {**json_ok(ref('Image')), **err(404, 'Không tìm thấy ảnh')},
+        'get': op(IMG, 'Chi tiết một ảnh (kèm vật thể YOLOv5)', LOGIN, {**json_ok(ref('ImageDetail')), **err(404, 'Không tìm thấy ảnh')},
                   params=[p('id', 'Id ảnh')]),
         'delete': op(IMG, 'Xóa ảnh (admin)', ADMIN, {**json_ok(obj(message=s(example='Đã xóa'), id=i())),
                                                     **err(404, 'Không tìm thấy ảnh')}, params=[p('id', 'Id ảnh')]),
@@ -249,6 +267,17 @@ PATHS = {
     },
     '/api/clients': {'get': op(MON, 'Các Client đã kết nối', LOGIN, json_ok(arr(ref('Client'))))},
     '/api/cameras': {'get': op(MON, 'Danh sách camera (có ảnh / Client khai báo)', LOGIN, json_ok(arr(ref('Camera'))))},
+    # ---------- Nhận diện YOLOv5 ----------
+    '/api/detect/status': {
+        'get': op(DET, 'Trạng thái luồng nhận diện', LOGIN, json_ok(ref('DetectStatus')),
+                  desc='Ảnh mới được đưa vào hàng đợi; 1 luồng nền chạy YOLOv5 rồi ghi bảng `detections`. '
+                       'Ảnh còn sót (hàng đợi đầy, Server khởi động lại) được quét bù định kỳ.'),
+    },
+    '/api/objects': {
+        'get': op(DET, 'Các loại vật thể đã gặp', LOGIN, json_ok(arr(obj(
+            label=s(example='car'), name=s(example='Ô tô'), images=i('Số ảnh có loại này', 50),
+            objects=i('Tổng số lần xuất hiện', 157))))),
+    },
     # ---------- Camera YouTube ----------
     '/api/streams': {
         'get': op(YT, 'Danh sách livestream', LOGIN, json_ok(arr(ref('Stream')))),
@@ -374,6 +403,7 @@ SPEC = {
     'tags': [{'name': IMG, 'description': 'Nhận ảnh từ Client, tra cứu, xóa'},
              {'name': CFG, 'description': 'Cấu hình Client từ xa'},
              {'name': MON, 'description': 'Client đang kết nối, camera, thống kê độ trễ'},
+             {'name': DET, 'description': 'Vật thể YOLOv5 tìm thấy trong ảnh (người, xe...)'},
              {'name': YT, 'description': 'Livestream YouTube trên trang Camera trực tiếp'},
              {'name': IPC, 'description': 'Camera IP trong mạng LAN'},
              {'name': USR, 'description': 'Tài khoản Website'},

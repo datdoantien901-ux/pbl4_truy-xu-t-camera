@@ -11,6 +11,7 @@
   {% if is_admin %}<a href="#config">Cấu hình thu nhận</a>{% endif %}
   <a href="#stats">Thống kê độ trễ</a>
   {% if is_admin %}<a href="#users">Người dùng</a>{% endif %}
+  <a href="#yolo">Nhận diện vật thể</a>
   <a href="#apidocs">Tài liệu API</a>
 </nav>
 
@@ -93,6 +94,19 @@
     <p>Đổi mật khẩu của chính bạn ở trang <a href="/account">Tài khoản</a> (bấm vào tên bạn ở góc dưới thanh bên trái).</p>
   </section>
   {% endif %}
+  <section class="panel" id="yolo">
+    <h2>Nhận diện vật thể (YOLOv5)</h2>
+    <p>Mỗi ảnh Client gửi lên được Server tự nhận diện bằng mô hình <strong>YOLOv5</strong> (người, ô tô, xe máy,
+       xe tải, xe đạp… — 80 loại), mất khoảng 50–150 ms mỗi ảnh và không làm chậm việc nhận ảnh.</p>
+    <ul>
+      <li><strong>Chi tiết ảnh</strong>: khung màu quanh từng vật thể kèm độ tin cậy; rê chuột lên tên vật thể để làm nổi khung đó,
+          bỏ chọn <strong>Hiện khung vật thể</strong> để xem ảnh gốc.</li>
+      <li><strong>Quản lý ảnh</strong>: ô <strong>Vật thể</strong> lọc ra ảnh có loại vật thể đó, cột Vật thể đếm số lượng mỗi loại.</li>
+      <li><strong>Ảnh từ Client</strong>: khung hình mới nhất ghi các vật thể tìm thấy.</li>
+      <li><strong>Thống kê độ trễ</strong>: thời gian YOLOv5 xử lý mỗi ảnh.</li>
+    </ul>
+  </section>
+
   <section class="panel" id="apidocs">
     <h2>Tài liệu API <a href="/apidocs">Mở trang</a></h2>
     <p>Trang Swagger liệt kê mọi API của Server theo nhóm: tham số, dữ liệu trả về, mã lỗi.
