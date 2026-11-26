@@ -1,7 +1,7 @@
 # Tiến trình dự án
 
 > Cập nhật file này ở cuối mỗi phiên làm việc: ghi việc đã xong, việc đang dở, lỗi mới phát hiện.
-> Cập nhật lần cuối: **2026-11-16**
+> Cập nhật lần cuối: **2026-11-26**
 
 ## Đã hoàn thành
 
@@ -26,6 +26,7 @@
 | 2026-11-16 | `feature/gop-camera-anh` | Gộp trang *Ảnh từ Client* vào *Camera trực tiếp* thành 2 tab (Video trực tiếp / Ảnh từ Client, `?tab=anh`); `/` chuyển về tab ảnh; mỗi tab chỉ chạy khi đang mở (video gỡ khi rời tab, ảnh không làm mới khi ẩn). Test Chrome headless + 51 kiểm thử phân quyền đạt |
 | 2026-11-16 | `feature/camera-ip` | **Camera IP** (`/ipcam`): nhập IP camera (theo hãng hoặc URL) → Server đọc bằng OpenCV, phát MJPEG cho trình duyệt, 1 luồng đọc / camera dùng chung. **Đăng nhập chọn vai trò**: Người xem vào thẳng không mật khẩu (chỉ xem), Quản trị viên nhập mật khẩu. Menu: Camera trực tiếp (trang mặc định), Camera IP, Ảnh từ Client. Test với camera giả MJPEG + MySQL thật, 51 kiểm thử phân quyền cũ vẫn đạt |
 | 2026-11-16 | `feature/phan-quyen` | **Phân quyền**: Client xác thực bằng khóa API (`X-API-Key`); Website bắt đăng nhập, 2 quyền admin / viewer, trang Người dùng + Tài khoản. **Camera YouTube** (`/live`): xem livestream ngay trên web (1 lớn hoặc lưới), admin thêm link / tìm livestream đang phát bằng yt-dlp; nạp sẵn 10 camera mẫu. Đã test 51 trường hợp phân quyền + API stream với MySQL thật (cổng 5055), Client thật (khóa đúng / sai / gửi bù), chụp màn hình Chrome headless; dọn dữ liệu thử |
+| 2026-11-26 | `feature/trang-huong-dan` | Giao diện tối giản: bỏ chú thích ở các trang chức năng, gom vào trang **Hướng dẫn** (`/huong-dan`, mục cuối thanh bên trái). Test: render mọi template với quyền admin, xem trang bằng chế độ khách trên cổng 5055 |
 | 2026-11-02 | 9 nhánh `refactor/*` + `docs/cau-truc-module`, merge `--no-ff` vào `feature/multithread-client` | Tách code theo chức năng, không đổi hành vi. Server: `settings`, `timeutil`, `db`, `storage`, `routes/{images,config,monitor,web}` (Blueprint). Client: `settings`, `shared_config`, `capture_thread`, `upload_thread`, `config_thread`. `migrate_sqlite_to_mysql.py` import trực tiếp `db`/`settings`/`timeutil` |
 
 ### Đã kiểm thử (2026-11-02, MySQL 8.0.46 cổng 3307, Python 3.13)

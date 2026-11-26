@@ -199,9 +199,21 @@ input:focus, select:focus { border-color: var(--sign); outline: none; box-shadow
 .range-row output { min-width: 2.5rem; text-align: right; font-weight: 600; }
 .form-actions { display: flex; align-items: center; gap: 1rem; padding-top: 1.25rem; }
 
-.side-note { padding: 1.25rem 1.4rem; font-size: .9rem; }
-.side-note h2 { font-size: 1rem; margin-bottom: .6rem; }
-.side-note ol { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: .45rem; }
+.config-grid.single { grid-template-columns: minmax(0, 760px); }
+
+/* ---------- Hướng dẫn (mọi chú thích chức năng gom về đây) ---------- */
+.guide-toc { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1.5rem; }
+.guide-toc a { padding: .35rem .8rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); text-decoration: none; font-size: .88rem; }
+.guide-toc a:hover { border-color: var(--sign); }
+.guide { display: flex; flex-direction: column; gap: 1rem; max-width: 820px; }
+.guide section { padding: 1.25rem 1.5rem; scroll-margin-top: 1rem; }
+.guide h2 { font-size: 1.1rem; margin-bottom: .5rem; display: flex; align-items: center; gap: .6rem; }
+.guide h2 a { font-size: .82rem; font-weight: 500; }
+.guide p, .guide li { font-size: .92rem; color: var(--ink-soft); }
+.guide p { margin: .4rem 0; }
+.guide ul, .guide ol { margin: .4rem 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: .35rem; }
+.guide strong { color: var(--ink); }
+.guide .tag { font-size: .72rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px; background: var(--sign-tint); color: var(--sign); }
 
 /* ---------- Thống kê ---------- */
 .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }

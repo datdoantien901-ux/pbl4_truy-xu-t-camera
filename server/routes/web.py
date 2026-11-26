@@ -12,6 +12,7 @@ Các trang web (template trong server/templates/):
     /account      tài khoản, đổi mật khẩu   (đăng nhập)
     /config       cấu hình Client từ xa     (admin)
     /users        quản lý người dùng        (admin)
+    /huong-dan    hướng dẫn: mọi chú thích chức năng gom về đây (đăng nhập / khách)
 """
 import time
 from urllib.parse import quote, urlparse
@@ -144,6 +145,11 @@ def page_users():
 @web_bp.route('/stats')
 def page_stats():
     return render_template('stats.html')
+
+
+@web_bp.route('/huong-dan')
+def page_guide():
+    return render_template('guide.html')
 
 
 @web_bp.route('/image/<int:image_id>')

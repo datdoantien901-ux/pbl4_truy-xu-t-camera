@@ -1,6 +1,6 @@
 # Server — giao diện web
 
-> Mã chức năng: `server-web` · Nhánh sửa lỗi: `fix/server-web` · Cập nhật lần cuối: **2026-11-16**
+> Mã chức năng: `server-web` · Nhánh sửa lỗi: `fix/server-web` · Cập nhật lần cuối: **2026-11-26**
 
 Các trang HTML: gallery real-time (`/`), quản lý (`/manage`), cấu hình (`/config`), thống kê (`/stats`), chi tiết ảnh (`/image/<id>`).
 
@@ -20,6 +20,7 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-26 | `feature/trang-huong-dan` | Tính năng | Giao diện tối giản: bỏ hết đoạn chú thích giải thích chức năng ở các trang (live, ipcam, manage, config, stats, users); gom về trang mới *Hướng dẫn* (`/huong-dan`, mục cuối thanh bên trái, phần chỉ admin ẩn với người xem). Trang cấu hình bỏ khung *Kiểm thử điều khiển từ xa*, form một cột | routes/web.py, templates/guide.html (mới), _layout.html, live.html, ipcam.html, manage.html, config.html, stats.html, users.html, static/style.css |
 | 2026-11-16 | `fix/vao-trang-va-chon-nguon` | Tính năng | Tab *Ảnh từ Client*: thay ô chọn thả xuống bằng danh sách nguồn bên phải (ảnh mới nhất, số ảnh, giờ chụp, chấm xanh nếu có ảnh trong 30 giây); màn hình hẹp đưa danh sách lên trên; thông tin khung hình mới nhất xếp dưới ảnh | templates/live.html, static/style.css |
 | 2026-11-16 | `feature/gop-camera-anh` | Tính năng | Gộp trang *Ảnh từ Client* (`index.html`, đã xóa) vào `live.html` thành tab thứ 2; bỏ mục menu riêng; `/` chuyển về `/live?tab=anh` (giữ `?camera=`); CSS `.tabs`, `.tab-bar`. Tab ảnh chỉ làm mới / báo "đã hiển thị" khi đang mở | routes/web.py, templates/live.html, templates/index.html (xóa), templates/_layout.html, static/style.css |
 | 2026-11-16 | `feature/camera-ip` | Tính năng | Menu: *Camera trực tiếp* (`/live`, trang mặc định) lên đầu, thêm *Camera IP* (`/ipcam`), *Ảnh trực tiếp* đổi tên thành *Ảnh từ Client*; ô người dùng hiện "Khách · Chỉ xem" + nút Quản trị | templates/_layout.html, index.html, live.html, static/style.css |
