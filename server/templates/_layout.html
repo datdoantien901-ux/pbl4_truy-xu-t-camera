@@ -114,6 +114,35 @@ function objSummary(objects) {
   const e = Object.entries(objects || {});
   return e.length ? e.map(([k, v]) => `${objName(k)} ${v}`).join(' · ') : '';
 }
+// Vẽ khung vật thể YOLOv5 lên ảnh nằm trong `frame` (frame có position: relative).
+// Ảnh có thể bị co giãn kiểu object-fit: contain → tính đúng vùng ảnh thật rồi đặt lớp khung lên đó.
+function drawDetections(frame, img, dets) {
+  frame.querySelector('.det-layer')?.remove();
+  frame._detObs?.disconnect();
+  if (!dets || !dets.length) return;
+  const layer = el('div', {class: 'det-layer'});
+  dets.forEach((d, i) => {
+    const name = d.name || objName(d.label), pct = Math.round(d.confidence * 100);
+    layer.append(el('div', {class: 'obj-box', 'data-i': i, title: `${name} ${pct}%`, style: `--c: ${i}`},
+      el('span', {}, `${name} ${pct}%`)));
+  });
+  frame.append(layer);
+  const place = () => {
+    const W = img.naturalWidth, H = img.naturalHeight, fw = img.clientWidth, fh = img.clientHeight;
+    if (!W || !H || !fw || !fh) return;
+    const k = Math.min(fw / W, fh / H), w = W * k, h = H * k;
+    Object.assign(layer.style, {left: img.offsetLeft + (fw - w) / 2 + 'px', top: img.offsetTop + (fh - h) / 2 + 'px',
+                                width: w + 'px', height: h + 'px'});
+    layer.querySelectorAll('.obj-box').forEach((b, i) => {
+      const d = dets[i];
+      Object.assign(b.style, {left: d.x1 / W * 100 + '%', top: d.y1 / H * 100 + '%',
+                              width: (d.x2 - d.x1) / W * 100 + '%', height: (d.y2 - d.y1) / H * 100 + '%'});
+    });
+  };
+  if (img.complete) place(); else img.addEventListener('load', place, {once: true});
+  frame._detObs = new ResizeObserver(place);
+  frame._detObs.observe(img);
+}
 function fmtSec(v) { return (v === null || v === undefined) ? '—' : v.toFixed(3) + ' s'; }
 function latency(a, b) {
   if (!a || !b) return null;

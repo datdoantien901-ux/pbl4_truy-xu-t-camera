@@ -265,6 +265,8 @@ input:focus, select:focus { border-color: var(--sign); outline: none; box-shadow
 }
 .obj-box.hot { border-width: 3px; box-shadow: 0 0 0 9999px rgba(0,0,0,.35); z-index: 2; }
 .hide-boxes .obj-box { display: none; }
+.det-layer { position: absolute; pointer-events: none; }
+.det-layer .obj-box span { font-size: .68rem; }
 .box-toggle { margin-top: .6rem; }
 .obj-list { list-style: none; margin: 0 0 .5rem; padding: 0; display: flex; flex-direction: column; gap: .3rem; font-size: .9rem; }
 .obj-list li { display: flex; align-items: center; gap: .5rem; cursor: default; }
@@ -371,6 +373,18 @@ input[type=password], input[type=url], input[type=search] {
 .player-info { padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .player-info h2 { font-size: 1.05rem; font-weight: 600; }
 .player-info .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+/* Khung "Phân tích YOLOv5" dưới video */
+.yolo-panel { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 1.25rem; align-items: center;
+  padding: 1rem 1.25rem; border-top: 1px solid var(--line); }
+.yolo-frame { position: relative; display: block; aspect-ratio: 16 / 9; background: #1e2a33; border-radius: var(--radius-sm); overflow: hidden; }
+.yolo-frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.yolo-info h3 { font-size: .95rem; font-weight: 600; }
+.yolo-time { font-size: .84rem; color: var(--ink-soft); margin: .2rem 0 .7rem; }
+.yolo-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+.obj-chip { font-size: .84rem; padding: .2rem .6rem; border-radius: 999px; background: var(--sign-tint); color: var(--ink); }
+.obj-chip b { color: var(--sign); }
+.tab-bar-right { display: flex; gap: 1.25rem; flex-wrap: wrap; }
 .stream-list { display: flex; flex-direction: column; max-height: calc(100vh - 9rem); overflow-y: auto; }
 .stream-item { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: .7rem; align-items: center; padding: .6rem .7rem; border: 0; border-bottom: 1px solid var(--line); background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; width: 100%; }
 .stream-item:last-child { border-bottom: 0; }
@@ -424,6 +438,7 @@ input[type=password], input[type=url], input[type=search] {
   .nav a { flex-shrink: 0; }
   .sidebar-foot h3, .client-list { display: none; }   /* vẫn giữ ô người dùng + nút đăng xuất */
   .live-layout { grid-template-columns: minmax(0, 1fr); }
+  .yolo-panel { grid-template-columns: 1fr; }
   .live-grid { grid-template-columns: minmax(0, 1fr); }
   .user-form { grid-template-columns: 1fr; }
   .ipcam-grid { grid-template-columns: minmax(0, 1fr); }
