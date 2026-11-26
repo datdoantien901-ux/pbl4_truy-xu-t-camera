@@ -8,6 +8,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+// Áp trạng thái ẩn thanh bên trái trước khi vẽ trang → không bị nháy
+try { if (localStorage.getItem('navHidden') === '1') document.documentElement.classList.add('nav-hidden'); } catch {}
+</script>
 </head>
 <body>
 {# (đường dẫn, tên, icon, chỉ admin) — viewer không thấy mục chỉ admin #}
@@ -20,8 +24,12 @@
   ('/users', 'Người dùng', '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.6.8 2.6 2.6 3 5.2"/>', true),
   ('/huong-dan', 'Hướng dẫn', '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.2a2.6 2.6 0 0 1 5 .9c0 1.7-2.5 2.2-2.5 3.9"/><path d="M12 17h.01"/>', false),
 ] %}
+<button class="nav-toggle" id="navToggle" type="button" aria-controls="sidebar" aria-expanded="true" title="Ẩn thanh bên (phím \)" aria-label="Ẩn thanh bên">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+</button>
 <div class="shell">
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar">
     <a class="brand" href="/live">
       <span class="brand-mark">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -144,6 +152,31 @@ async function refreshClients() {
 }
 refreshClients();
 setInterval(refreshClients, 5000);
+
+// Nút ẩn / hiện thanh bên trái (phím tắt "\" khi không gõ trong ô nhập)
+(function () {
+  const btn = document.getElementById('navToggle'), root = document.documentElement;
+  function sync() {
+    const hidden = root.classList.contains('nav-hidden');
+    const label = hidden ? 'Hiện thanh bên' : 'Ẩn thanh bên';
+    btn.setAttribute('aria-expanded', String(!hidden));
+    btn.setAttribute('aria-label', label);
+    btn.title = label + ' (phím \\)';
+  }
+  function toggle() {
+    const hidden = root.classList.toggle('nav-hidden');
+    try { localStorage.setItem('navHidden', hidden ? '1' : '0'); } catch {}
+    sync();
+  }
+  btn.addEventListener('click', toggle);
+  document.addEventListener('keydown', e => {
+    if (e.key !== '\\' || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target;
+    if (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
+    e.preventDefault(); toggle();
+  });
+  sync();
+})();
 </script>
 {% block scripts %}{% endblock %}
 </body>
