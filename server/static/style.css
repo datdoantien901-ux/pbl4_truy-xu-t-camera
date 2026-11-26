@@ -213,6 +213,11 @@ input:focus, select:focus { border-color: var(--sign); outline: none; box-shadow
 .range-row output { min-width: 2.5rem; text-align: right; font-weight: 600; }
 .form-actions { display: flex; align-items: center; gap: 1rem; padding-top: 1.25rem; }
 
+/* Swagger UI trong khung trang: bỏ thanh trên cùng, chữ theo font chung */
+.swagger-wrap { padding: 0 .5rem; }
+.swagger-wrap .swagger-ui .info { margin: 1.25rem 0; }
+.swagger-wrap .swagger-ui, .swagger-wrap .swagger-ui .info .title, .swagger-wrap .swagger-ui .opblock-tag { font-family: inherit; }
+
 .config-grid.single { grid-template-columns: minmax(0, 760px); }
 
 /* ---------- Hướng dẫn (mọi chú thích chức năng gom về đây) ---------- */

@@ -1,0 +1,31 @@
+{% extends '_layout.html' %}
+{% block title %}Tài liệu API{% endblock %}
+{% block content %}
+{# Swagger UI (bản 5.17.14, CDN jsdelivr) đọc đặc tả từ /api/openapi.json — nội dung đặc tả ở server/openapi.py #}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui.css">
+<div class="page-head">
+  <div><h1>Tài liệu API</h1></div>
+  <a class="btn" href="/api/openapi.json" target="_blank" rel="noopener">openapi.json</a>
+</div>
+<div class="panel swagger-wrap"><div id="swagger"><div class="empty">Đang tải Swagger UI…</div></div></div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
+<script>
+if (window.SwaggerUIBundle) {
+  SwaggerUIBundle({
+    url: '/api/openapi.json',
+    dom_id: '#swagger',
+    deepLinking: true,
+    docExpansion: 'list',          // mở sẵn danh sách API theo nhóm, chưa mở chi tiết
+    defaultModelsExpandDepth: 0,   // thu gọn mục Schemas cuối trang
+    persistAuthorization: true,    // nhớ khóa API đã nhập ở nút Authorize
+    tryItOutEnabled: false,
+  });
+} else {
+  document.getElementById('swagger').replaceChildren(
+    el('div', {class: 'empty'}, el('strong', {}, 'Không tải được Swagger UI'),
+       'Máy này cần Internet để tải giao diện. Đặc tả vẫn xem được ở /api/openapi.json.'));
+}
+</script>
+{% endblock %}
