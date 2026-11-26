@@ -29,6 +29,14 @@
         <a class="btn" id="ytLink" target="_blank" rel="noopener noreferrer">Mở trên YouTube</a>
       </div>
     </div>
+    <div class="yolo-panel" id="yolo" hidden>
+      <a class="yolo-frame" id="yoloFrame"></a>
+      <div class="yolo-info">
+        <h3>Phân tích YOLOv5</h3>
+        <div class="yolo-time" id="yoloTime"></div>
+        <div class="yolo-chips" id="yoloChips"></div>
+      </div>
+    </div>
   </section>
   <aside class="panel stream-list" id="list" aria-label="Danh sách camera"></aside>
 </div>
@@ -61,7 +69,10 @@
 <div id="tab-anh" role="tabpanel" aria-labelledby="tabBtn-anh" hidden>
 <div class="tab-bar">
   <span></span>
-  <label class="toggle"><input type="checkbox" id="autoRefresh" checked> Tự cập nhật mỗi 2 giây</label>
+  <span class="tab-bar-right">
+    <label class="toggle"><input type="checkbox" id="showBoxes" checked> Khung YOLOv5</label>
+    <label class="toggle"><input type="checkbox" id="autoRefresh" checked> Tự cập nhật mỗi 2 giây</label>
+  </span>
 </div>
 <div class="live-layout">
   <div class="photo-main">
@@ -259,14 +270,49 @@ if (IS_ADMIN) {
   });
 }
 
+// Khung "Phân tích YOLOv5": ảnh Client chụp mới nhất từ camera đang xem + khung vật thể.
+// (Trình duyệt không cho đọc hình trong khung YouTube nhúng → phân tích trên ảnh Client chụp từ chính livestream này.)
+let yoloSig = '';
+async function loadYolo() {
+  const s = currentStream(), panel = document.getElementById('yolo');
+  if (!active || !s || document.getElementById('gridMode').checked) { panel.hidden = true; return; }
+  let it;
+  try {
+    it = (await (await fetch('/api/images?' + new URLSearchParams({camera: camId(s.video_id), per_page: 1}))).json()).items[0];
+  } catch { return; }
+  panel.hidden = !it;
+  if (!it) { yoloSig = ''; return; }
+  const ago = Math.max(0, Math.round((Date.now() - new Date(it.capture_time)) / 1000));
+  document.getElementById('yoloTime').textContent =
+    `Khung hình lúc ${clock(it.capture_time)}` + (ago < 3600 ? ` · ${ago} giây trước` : ` · ${day(it.capture_time)}`);
+  const sig = it.id + '/' + it.object_count;
+  if (sig === yoloSig) return;   // chưa có ảnh / kết quả mới → không vẽ lại
+  yoloSig = sig;
+  const frame = document.getElementById('yoloFrame');
+  frame.href = `/image/${it.id}`;
+  const img = el('img', {src: '/' + it.file_path, alt: `Ảnh #${it.id}`});
+  frame.replaceChildren(img);
+  const chips = document.getElementById('yoloChips');
+  if (!it.detected_time) { chips.replaceChildren(el('span', {class: 'muted'}, 'Đang nhận diện…')); return; }
+  const entries = Object.entries(it.objects || {});
+  chips.replaceChildren(...(entries.length
+    ? entries.map(([k, v]) => el('span', {class: 'obj-chip'}, el('b', {}, v), ' ' + objName(k)))
+    : [el('span', {class: 'muted'}, 'Không thấy vật thể')]));
+  if (it.object_count) {
+    try { drawDetections(frame, img, (await (await fetch(`/api/images/${it.id}`)).json()).detections); } catch {}
+  }
+}
+setInterval(loadYolo, 3000);
+
   return {
-    show() { active = true; render(); },
+    show() { active = true; render(); yoloSig = ''; loadYolo(); },
     hide() {   // rời tab → gỡ khung nhúng để video ngừng phát (đỡ tốn mạng)
       active = false;
+      document.getElementById('yolo').hidden = true;
       document.getElementById('frame').querySelector('iframe')?.remove();
       document.getElementById('grid').replaceChildren();
     },
-    refresh: render,
+    refresh() { render(); yoloSig = ''; loadYolo(); },
   };
 })();
 
@@ -294,6 +340,7 @@ function renderLatest(it) {
   const frame = box.querySelector('.latest-frame');
   const info = box.querySelector('.latest-info');
   frame.querySelector('img')?.remove();
+  frame.querySelector('.det-layer')?.remove();
   const s = currentStream();
   if (!it) {
     info.replaceChildren(el('div', {class: 'empty'},
@@ -306,6 +353,10 @@ function renderLatest(it) {
   const img = el('img', {src: '/' + it.file_path, alt: `Ảnh #${it.id} chụp lúc ${fmtTime(it.capture_time)}`});
   markDisplayed(img, it);
   frame.prepend(img);
+  if (it.object_count)   // có vật thể → lấy tọa độ khung (chi tiết ảnh) rồi vẽ lên khung hình
+    fetch(`/api/images/${it.id}`).then(r => r.json()).then(d => {
+      if (frame.contains(img)) drawDetections(frame, img, d.detections);
+    }).catch(() => {});
   info.replaceChildren(
     el('div', {},
       el('h2', {}, 'Khung hình mới nhất'),
@@ -389,6 +440,9 @@ async function loadStats() {
   listSig = sig;
   renderSources();
 }
+
+document.getElementById('showBoxes').onchange = e =>
+  document.querySelector('#latest .latest-frame').classList.toggle('hide-boxes', !e.target.checked);
 
 const live = document.getElementById('autoRefresh');
 const tag = document.getElementById('liveTag');
