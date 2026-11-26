@@ -84,7 +84,21 @@ code { font-size: .9em; background: var(--sign-tint); padding: .1em .35em; borde
 .client-id { font-weight: 600; }
 .client-ip { opacity: .75; display: block; font-size: .76rem; }
 
-.content { padding: 2rem 2.5rem 3rem; min-width: 0; }
+.content { padding: 2rem 2.5rem 3rem 3.5rem; min-width: 0; }
+
+/* Nút ẩn / hiện thanh bên trái — trạng thái lưu localStorage, lớp .nav-hidden đặt trên <html> */
+.nav-toggle {
+  position: fixed; top: .6rem; left: calc(var(--sidebar) + .5rem); z-index: 50;
+  width: 32px; height: 32px; display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink);
+  cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+.nav-toggle:hover { border-color: var(--sign); color: var(--sign); }
+.nav-toggle:focus-visible { outline: 3px solid var(--sign-tint); border-color: var(--sign); }
+.nav-toggle svg { width: 18px; height: 18px; }
+.nav-hidden .shell { grid-template-columns: minmax(0, 1fr); }
+.nav-hidden .sidebar { display: none; }
+.nav-hidden .nav-toggle { left: .6rem; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
 .page-head h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -.01em; }
 .page-head p { margin: .25rem 0 0; color: var(--ink-soft); max-width: 62ch; }
@@ -398,6 +412,8 @@ input[type=password], input[type=url], input[type=search] {
   .ipcam-grid { grid-template-columns: minmax(0, 1fr); }
   .ipcam-form { grid-template-columns: 1fr 1fr; }
   .content { padding: 1.25rem 1rem 2rem; }
+  .nav-toggle, .nav-hidden .nav-toggle { left: auto; right: .6rem; }
+  .nav-hidden .content { padding-top: 3rem; }
   .setting { grid-template-columns: 1fr; gap: .6rem; }
   .metrics { grid-template-columns: 1fr; }
   .metric { border-right: 0; border-bottom: 1px solid var(--line); }
