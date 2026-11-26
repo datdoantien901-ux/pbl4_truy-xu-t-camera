@@ -26,3 +26,6 @@ server/uploads/
 /timestamp/
 /images/
 client/timestamp/
+
+# Mô hình YOLOv5 (tải bằng: python detector.py --download)
+server/models/

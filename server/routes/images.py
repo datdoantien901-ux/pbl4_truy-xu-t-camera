@@ -2,8 +2,8 @@
 API ảnh:
     GET    /uploads/<file>             trả file ảnh
     POST   /api/images                 nhận ảnh mới (multipart/form-data) — Client, cần khóa API
-    GET    /api/images                 danh sách (phân trang, lọc theo thời gian, ?camera=<id>)
-    GET    /api/images/<id>            chi tiết 1 ảnh
+    GET    /api/images                 danh sách (phân trang, lọc theo thời gian, ?camera=<id>, ?object=person)
+    GET    /api/images/<id>            chi tiết 1 ảnh (kèm detections: vật thể YOLOv5 tìm thấy)
     DELETE /api/images/<id>            xóa ảnh — chỉ admin
     POST   /api/images/<id>/displayed  trình duyệt báo ảnh đã hiển thị (đo độ trễ)
 """
@@ -13,6 +13,7 @@ from datetime import datetime
 
 from flask import Blueprint, g, jsonify, request, send_from_directory
 
+import detector
 from auth import admin_required
 from db import get_db, to_json, touch_client
 from settings import ALLOWED_EXT, UPLOAD_FOLDER, log
@@ -85,6 +86,7 @@ def upload_image():
              client_id or '?', request.remote_addr, file_size_kb,
              seconds_between(capture_time, received_time))
     cleanup_old_images()
+    detector.worker.submit(image_id)   # đưa vào hàng đợi YOLOv5, không chờ kết quả
 
     return jsonify({
         'id': image_id,
@@ -103,8 +105,12 @@ def list_images():
     end = normalize_time(request.args.get('end'))
     q = (request.args.get('q') or '').strip()
     camera = (request.args.get('camera') or '').strip()   # id camera = cột source
+    obj = (request.args.get('object') or '').strip()      # loại vật thể YOLOv5 (person, car...)
 
     where, params = [], []
+    if obj:
+        where.append('EXISTS (SELECT 1 FROM detections d WHERE d.image_id = images.id AND d.label = %s)')
+        params.append(obj)
     if camera:
         where.append('source = %s')
         params.append(camera)
@@ -126,6 +132,7 @@ def list_images():
     cur.execute(f'SELECT * FROM images {where_sql} ORDER BY id DESC LIMIT %s OFFSET %s',
                 params + [per_page, (page - 1) * per_page])
     items = [to_json(r) for r in cur.fetchall()]
+    _attach_objects(cur, items)
     conn.close()
 
     return jsonify({
@@ -137,16 +144,41 @@ def list_images():
     })
 
 
+def _attach_objects(cur, items):
+    """Thêm 'objects' = {loại: số lượng} cho mỗi ảnh (1 truy vấn cho cả trang)."""
+    for it in items:
+        it['objects'] = {}
+    if not items:
+        return
+    by_id = {it['id']: it for it in items}
+    cur.execute(f'''SELECT image_id, label, COUNT(*) AS n FROM detections
+                    WHERE image_id IN ({', '.join(['%s'] * len(by_id))})
+                    GROUP BY image_id, label ORDER BY n DESC''', list(by_id))
+    for r in cur.fetchall():
+        by_id[r['image_id']]['objects'][r['label']] = r['n']
+
+
+def image_detections(cur, image_id):
+    """Danh sách vật thể của 1 ảnh (dùng cho API và trang chi tiết)."""
+    cur.execute('''SELECT label, confidence, x1, y1, x2, y2 FROM detections
+                   WHERE image_id = %s ORDER BY confidence DESC''', (image_id,))
+    return [{**r, 'confidence': round(r['confidence'], 3), 'name': detector.vi_name(r['label'])}
+            for r in cur.fetchall()]
+
+
 @images_bp.route('/api/images/<int:image_id>', methods=['GET'])
 def get_image(image_id):
     conn = get_db()
     cur = conn.cursor()
     cur.execute('SELECT * FROM images WHERE id = %s', (image_id,))
     row = cur.fetchone()
-    conn.close()
     if row is None:
+        conn.close()
         return jsonify({'error': 'Không tìm thấy ảnh'}), 404
-    return jsonify(to_json(row))
+    item = to_json(row)
+    item['detections'] = image_detections(cur, image_id)
+    conn.close()
+    return jsonify(item)
 
 
 @images_bp.route('/api/images/<int:image_id>', methods=['DELETE'])

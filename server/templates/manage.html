@@ -10,6 +10,8 @@
 <form id="filter" class="panel filter">
   <label class="field"><span>Camera</span>
     <select name="camera" id="camera"><option value="">Tất cả camera</option></select></label>
+  <label class="field"><span>Vật thể</span>
+    <select name="object" id="object"><option value="">Tất cả</option></select></label>
   <label class="field"><span>Chụp từ</span><input type="datetime-local" name="start" step="1"></label>
   <label class="field"><span>Đến</span><input type="datetime-local" name="end" step="1"></label>
   <label class="field"><span>Tên file hoặc Client</span><input type="text" name="q" placeholder="Ví dụ: client-01"></label>
@@ -26,7 +28,7 @@
   <table class="data">
     <thead>
       <tr><th>{% if is_admin %}<input type="checkbox" id="all" aria-label="Chọn tất cả">{% endif %}</th><th>Ảnh</th><th>Số</th><th>Chụp lúc</th>
-          <th>Camera</th><th>Client</th><th class="num">Dung lượng</th><th class="num">Độ phân giải</th><th></th></tr>
+          <th>Camera</th><th>Vật thể</th><th>Client</th><th class="num">Dung lượng</th><th class="num">Độ phân giải</th><th></th></tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
@@ -42,7 +44,7 @@ const form = document.getElementById('filter');
 function query() {
   const fd = new FormData(form);
   const p = new URLSearchParams({page, per_page: PER_PAGE});
-  for (const k of ['camera', 'start', 'end', 'q']) if (fd.get(k)) p.set(k, fd.get(k));
+  for (const k of ['camera', 'object', 'start', 'end', 'q']) if (fd.get(k)) p.set(k, fd.get(k));
   return p;
 }
 
@@ -53,7 +55,7 @@ async function load(p = 1) {
   const tbody = document.getElementById('rows');
   tbody.replaceChildren();
   if (!data.items.length)
-    tbody.append(el('tr', {}, el('td', {colspan: 9},
+    tbody.append(el('tr', {}, el('td', {colspan: 10},
       el('div', {class: 'empty'}, el('strong', {}, 'Không có ảnh phù hợp'), 'Thử nới rộng khoảng thời gian hoặc xóa bộ lọc.'))));
 
   for (const it of data.items) {
@@ -65,6 +67,7 @@ async function load(p = 1) {
       el('td', {}, '#' + it.id),
       el('td', {}, fmtTime(it.capture_time)),
       el('td', {}, it.source || '—'),
+      el('td', {class: 'objs'}, it.detected_time ? (objSummary(it.objects) || 'Không có') : 'Chưa nhận diện'),
       el('td', {}, it.client_id || '—'),
       el('td', {class: 'num'}, it.file_size_kb + ' KB'),
       el('td', {class: 'num'}, it.width && it.height ? `${it.width} × ${it.height}` : '—'),
@@ -97,6 +100,12 @@ async function del(ids) {
   await Promise.all(ids.map(id => fetch(`/api/images/${id}`, {method: 'DELETE'})));
   load(page);
 }
+
+// Ô "Vật thể": các loại YOLOv5 đã gặp trong ảnh (kèm số ảnh)
+const objSelect = document.getElementById('object');
+objSelect.onchange = () => load(1);
+fetch('/api/objects').then(r => r.json()).then(list => objSelect.append(
+  ...list.map(o => el('option', {value: o.label}, `${o.name} (${o.images} ảnh)`)))).catch(() => {});
 
 const camSelect = document.getElementById('camera');
 camSelect.onchange = () => { cameraToUrl(camSelect.value); load(1); };   // đổi camera → lọc ngay

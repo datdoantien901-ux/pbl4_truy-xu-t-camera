@@ -244,6 +244,22 @@ Camera IP ──RTSP / HTTP──▶ Server (OpenCV đọc khung, nén JPEG) ─
 - Mật khẩu camera chỉ lưu trên Server; trình duyệt chỉ thấy `rtsp://admin:***@…`. Chỉ admin được nhập IP mới (tránh người ngoài dùng Server dò các máy khác trong mạng).
 - Trình duyệt chỉ mở khoảng 6 kết nối tới một Server → trang tự phát tối đa 4 camera, camera khác bấm *Xem*.
 
+## Nhận diện vật thể (YOLOv5)
+
+Server tự nhận diện vật thể trong mỗi ảnh Client gửi lên bằng **YOLOv5s** (mô hình ONNX chính thức của Ultralytics, 80 loại COCO),
+chạy bằng **OpenCV DNN** — không cần cài PyTorch.
+
+```powershell
+cd server
+python detector.py --download          # tải models/yolov5s.onnx (14 MB, một lần; không commit)
+python detector.py uploads\<anh>.jpg   # thử trên 1 ảnh
+```
+
+- `POST /api/images` đưa id ảnh vào `queue.Queue` rồi trả lời ngay; **1 luồng nền** `YoloWorker` (luồng duy nhất dùng mô hình) chạy YOLOv5 (~50–150 ms/ảnh CPU), ghi bảng `detections` (loại, độ tin cậy, khung) và cột `images.detected_time / detect_ms / object_count`.
+- Ảnh còn sót (hàng đợi đầy, Server khởi động lại) được **quét bù** định kỳ.
+- Website: khung vật thể ở trang chi tiết ảnh, lọc ảnh theo vật thể ở Quản lý ảnh, thời gian YOLOv5 ở Thống kê.
+- Biến môi trường: `PBL4_YOLO=0` (tắt), `PBL4_YOLO_CONF` (ngưỡng tin cậy, mặc định 0.35), `PBL4_YOLO_MODEL` (đường dẫn file .onnx).
+
 ## REST API
 
 Xem đầy đủ và gọi thử trên Website: mục **Tài liệu API** (`/apidocs`, Swagger UI; đặc tả OpenAPI ở `/api/openapi.json`, nội dung trong `server/openapi.py`).

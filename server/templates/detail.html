@@ -13,7 +13,12 @@
 </div>
 
 <div class="detail">
-  <div class="detail-frame"><img src="/{{ image.file_path }}" alt="Ảnh #{{ image.id }}"></div>
+  <div>
+    <div class="detail-frame"><div class="boxed" id="boxed"><img id="photo" src="/{{ image.file_path }}" alt="Ảnh #{{ image.id }}"></div></div>
+    {% if detections %}
+    <label class="toggle box-toggle"><input type="checkbox" id="showBoxes" checked> Hiện khung vật thể</label>
+    {% endif %}
+  </div>
 
   <aside class="panel detail-info">
     <h2>Thời gian{% if image.capture_time %} ngày {{ image.capture_time[8:10] }}/{{ image.capture_time[5:7] }}/{{ image.capture_time[:4] }}{% endif %}</h2>
@@ -30,6 +35,17 @@
       <dt>Chụp → hiển thị</dt><dd>{{ sec(image.capture_to_display) }}</dd>
     </dl>
 
+    <h2>Vật thể (YOLOv5)</h2>
+    {% if image.detected_time is none %}
+    <p class="muted small">Chưa nhận diện.</p>
+    {% elif not detections %}
+    <p class="muted small">Không thấy vật thể nào.</p>
+    {% else %}
+    <ul class="obj-list">
+      {% for d in detections %}<li data-i="{{ loop.index0 }}"><span class="obj-dot" style="--c: {{ loop.index0 }}"></span>{{ d.name }}<span>{{ '%.0f'|format(d.confidence * 100) }}%</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if image.detect_ms is not none %}<p class="muted small">Thời gian nhận diện: {{ '%.0f'|format(image.detect_ms) }} ms</p>{% endif %}
     <h2>Ảnh</h2>
     <dl class="facts">
       <dt>Độ phân giải</dt><dd>{{ image.width or '?' }} × {{ image.height or '?' }}</dd>
@@ -50,6 +66,29 @@
 {% endblock %}
 {% block scripts %}
 <script>
+// Khung vật thể: tọa độ pixel ảnh gốc → % kích thước ảnh, nên tự co giãn theo khung hiển thị
+const DETS = {{ detections|tojson }};
+const photo = document.getElementById('photo');
+function drawBoxes() {
+  const W = photo.naturalWidth, H = photo.naturalHeight, box = document.getElementById('boxed');
+  box.querySelectorAll('.obj-box').forEach(b => b.remove());
+  if (!W || !H) return;
+  DETS.forEach((d, i) => box.append(el('div', {
+    class: 'obj-box', 'data-i': i, title: `${d.name} ${Math.round(d.confidence * 100)}%`,
+    style: `--c: ${i}; left: ${d.x1 / W * 100}%; top: ${d.y1 / H * 100}%;` +
+           `width: ${(d.x2 - d.x1) / W * 100}%; height: ${(d.y2 - d.y1) / H * 100}%`},
+    el('span', {}, `${d.name} ${Math.round(d.confidence * 100)}%`))));
+}
+if (photo.complete) drawBoxes(); else photo.addEventListener('load', drawBoxes);
+document.getElementById('showBoxes')?.addEventListener('change', e =>
+  document.getElementById('boxed').classList.toggle('hide-boxes', !e.target.checked));
+// Rê chuột lên tên vật thể → làm nổi khung tương ứng
+document.querySelectorAll('.obj-list li').forEach(li => {
+  const on = v => document.querySelector(`.obj-box[data-i="${li.dataset.i}"]`)?.classList.toggle('hot', v);
+  li.addEventListener('mouseenter', () => on(true));
+  li.addEventListener('mouseleave', () => on(false));
+});
+
 document.getElementById('del')?.addEventListener('click', async () => {
   if (!confirm('Xóa ảnh #{{ image.id }}?')) return;
   const r = await fetch('/api/images/{{ image.id }}', {method: 'DELETE'});

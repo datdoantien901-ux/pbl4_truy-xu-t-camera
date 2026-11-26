@@ -346,7 +346,9 @@ function renderLatest(it) {
       el('dt', {}, 'Chụp → nhận'), el('dd', {}, fmtSec(latency(it.capture_time, it.received_time))),
       el('dt', {}, 'Độ phân giải'), el('dd', {}, it.width && it.height ? `${it.width} × ${it.height}` : '—'),
       el('dt', {}, 'Dung lượng'), el('dd', {}, it.file_size_kb + ' KB'),
-      el('dt', {}, 'Chu kỳ chụp'), el('dd', {}, it.interval_used ? it.interval_used + ' giây' : '—')),
+      el('dt', {}, 'Chu kỳ chụp'), el('dd', {}, it.interval_used ? it.interval_used + ' giây' : '—'),
+      el('dt', {}, 'Vật thể'), el('dd', {title: objSummary(it.objects)},
+        it.detected_time ? (objSummary(it.objects) || 'Không có') : 'Đang nhận diện…')),
     el('a', {class: 'btn', href: `/image/${it.id}`}, 'Xem chi tiết'));
 }
 
@@ -356,7 +358,7 @@ async function loadGallery(p) {
   if (!s) { renderLatest(null); document.getElementById('gallery').replaceChildren(); return; }
   const q = new URLSearchParams({page: p, per_page: PER_PAGE, camera: camId(s.video_id)});
   const data = await (await fetch('/api/images?' + q)).json();
-  const signature = s.video_id + ':' + p + ':' + data.items.map(i => i.id).join(',');
+  const signature = s.video_id + ':' + p + ':' + data.items.map(i => i.id + '/' + i.object_count).join(',');   // có kết quả YOLO → vẽ lại
   if (signature === lastSignature) return;   // không có ảnh mới → không vẽ lại
   lastSignature = signature;
 
@@ -372,6 +374,7 @@ async function loadGallery(p) {
     return el('a', {href: `/image/${it.id}`, class: 'thumb-card'}, img,
       el('div', {class: 'thumb-meta'},
         el('span', {class: 'time'}, clock(it.capture_time)),
+        it.object_count ? el('span', {class: 'id', title: objSummary(it.objects)}, `${it.object_count} vật thể`) : null,
         el('span', {class: 'id'}, `#${it.id}`)));
   }));
 

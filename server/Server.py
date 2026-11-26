@@ -17,6 +17,8 @@ Mỗi chức năng nằm ở một file riêng:
     auth.py             đăng nhập (admin / viewer) + khóa API của Client
     youtube.py          kiểm tra / tìm livestream YouTube bằng yt-dlp
     routes/apidocs.py   tài liệu API Swagger  /apidocs, /api/openapi.json
+    detector.py         YOLOv5 nhận diện vật thể: luồng nền + hàng đợi, lưu bảng detections
+    routes/detect.py    API nhận diện /api/detect/status, /api/objects
     openapi.py          đặc tả OpenAPI 3.0 của mọi API (sửa API thì sửa cả ở đây)
 
 CSDL: MySQL, cấu hình qua biến môi trường MYSQL_HOST, MYSQL_PORT, MYSQL_USER,
@@ -31,9 +33,11 @@ import secrets
 from flask import Flask
 
 import auth
+import detector
 from db import init_db
 from routes.apidocs import apidocs_bp
 from routes.config import config_bp
+from routes.detect import detect_bp
 from routes.images import images_bp
 from routes.ipcams import ipcams_bp
 from routes.monitor import monitor_bp
@@ -50,14 +54,18 @@ app.config.update(
     SESSION_COOKIE_SAMESITE='Lax',    # trang web lạ không gửi kèm cookie khi POST/DELETE (chống CSRF)
 )
 # Không bật CORS: Website và API cùng một địa chỉ, trang web khác không được gọi API bằng phiên đăng nhập
-for bp in (images_bp, config_bp, monitor_bp, streams_bp, ipcams_bp, users_bp, web_bp, apidocs_bp):
+for bp in (images_bp, config_bp, monitor_bp, streams_bp, ipcams_bp, users_bp, web_bp, apidocs_bp, detect_bp):
     app.register_blueprint(bp)
 auth.init_app(app)
+# Tên tiếng Việt các loại vật thể YOLOv5 → JS trong _layout.html (OBJ_NAMES)
+app.context_processor(lambda: {'obj_names': detector.VI_NAMES})
 if not SECRET_KEY:
     log.warning('[AUTH] Chưa đặt PBL4_SECRET_KEY → mỗi lần khởi động lại Server phải đăng nhập lại')
 
 # Khởi tạo DB ngay khi import (chạy được cả bằng `python Server.py` lẫn `flask run`)
 init_db()
+# Luồng nền nhận diện vật thể YOLOv5 (không có mô hình / PBL4_YOLO=0 → chỉ ghi cảnh báo, Server vẫn chạy)
+detector.start()
 
 if __name__ == '__main__':
     host = os.environ.get('PBL4_HOST', '0.0.0.0')   # 0.0.0.0 để máy khác trong LAN truy cập được

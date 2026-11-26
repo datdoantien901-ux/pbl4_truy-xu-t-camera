@@ -96,10 +96,27 @@ def init_db():
                       ('client_id', 'VARCHAR(100)'), ('client_capture_id', 'INT'),
                       ('client_ip', 'VARCHAR(45)'), ('original_name', 'VARCHAR(255)'),
                       ('source', 'VARCHAR(255)'),
-                      ('interval_used', 'INT'), ('quality_used', 'INT')]:
+                      ('interval_used', 'INT'), ('quality_used', 'INT'),
+                      # Kết quả YOLOv5 (detector.py): NULL = chưa nhận diện
+                      ('detected_time', 'DATETIME(3) NULL'), ('detect_ms', 'DOUBLE NULL'),
+                      ('object_count', 'INT NULL')]:
         _add_column(cur, 'images', col, decl)
     _datetime_to_ms(cur, 'images')
     _add_index(cur, 'images', 'idx_images_client_capture', 'client_id, client_capture_id')
+    _add_index(cur, 'images', 'idx_images_detected', 'detected_time')
+
+    # Vật thể YOLOv5 tìm thấy trong ảnh (tọa độ pixel của ảnh gốc). Xóa ảnh → tự xóa theo (CASCADE)
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS detections (
+            id         INT AUTO_INCREMENT PRIMARY KEY,
+            image_id   INT NOT NULL,
+            label      VARCHAR(30) NOT NULL,
+            confidence FLOAT NOT NULL,
+            x1 INT NOT NULL, y1 INT NOT NULL, x2 INT NOT NULL, y2 INT NOT NULL,
+            INDEX idx_det_label (label, image_id),
+            FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ''')
 
     cur.execute('''
         CREATE TABLE IF NOT EXISTS config (

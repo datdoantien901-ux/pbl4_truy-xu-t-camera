@@ -107,6 +107,13 @@ function day(s) {
   const [y, m, d] = s.split('T')[0].split('-');
   return `${d}/${m}/${y}`;
 }
+// Vật thể YOLOv5: 'person' → 'Người'; {person: 3, car: 1} → 'Người 3 · Ô tô 1'
+const OBJ_NAMES = {{ obj_names|tojson }};
+function objName(label) { return OBJ_NAMES[label] || label.replaceAll('_', ' '); }
+function objSummary(objects) {
+  const e = Object.entries(objects || {});
+  return e.length ? e.map(([k, v]) => `${objName(k)} ${v}`).join(' · ') : '';
+}
 function fmtSec(v) { return (v === null || v === undefined) ? '—' : v.toFixed(3) + ' s'; }
 function latency(a, b) {
   if (!a || !b) return null;
