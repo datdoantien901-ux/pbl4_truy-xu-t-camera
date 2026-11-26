@@ -1,0 +1,96 @@
+{% extends '_layout.html' %}
+{% block title %}Hướng dẫn{% endblock %}
+{% block content %}
+{# Mọi chú thích giải thích chức năng gom về trang này; các trang chức năng chỉ giữ phần điều khiển. #}
+<div class="page-head"><div><h1>Hướng dẫn</h1></div></div>
+
+<nav class="guide-toc" aria-label="Mục lục">
+  <a href="#live">Camera trực tiếp</a>
+  <a href="#ipcam">Camera IP</a>
+  <a href="#manage">Quản lý ảnh</a>
+  {% if is_admin %}<a href="#config">Cấu hình thu nhận</a>{% endif %}
+  <a href="#stats">Thống kê độ trễ</a>
+  {% if is_admin %}<a href="#users">Người dùng</a>{% endif %}
+</nav>
+
+<div class="guide">
+  <section class="panel" id="live">
+    <h2>Camera trực tiếp <a href="/live">Mở trang</a></h2>
+    <p>Chọn một camera trong danh sách bên phải, rồi xem theo một trong hai tab:</p>
+    <ul>
+      <li><strong>Video trực tiếp</strong>: video phát thẳng từ YouTube về trình duyệt nên máy xem cần có Internet.
+          Bật <strong>Xem nhiều camera cùng lúc</strong> để xem dạng lưới; nếu nhiều camera, trang chỉ hiện một số camera đầu để máy không bị chậm.</li>
+      <li><strong>Ảnh từ Client</strong>: ảnh Client chụp từ camera đang chọn và gửi lên Server. Ảnh mới tự hiện, mỗi 2 giây cập nhật một lần (tắt được).
+          Nếu chưa có ảnh, hãy chạy Client để bắt đầu gửi ảnh.</li>
+    </ul>
+    {% if is_admin %}
+    <p><span class="tag">Quản trị viên</span> Camera bạn chọn cũng là camera Client sẽ chụp ảnh.</p>
+    <ul>
+      <li><strong>Thêm link camera</strong>: dán link livestream YouTube. Server kiểm tra link có tồn tại và có cho nhúng vào web khác không.</li>
+      <li><strong>Tìm camera đang phát</strong>: Server tìm trên YouTube các video đang phát trực tiếp theo từ khóa (mất vài giây).</li>
+    </ul>
+    {% endif %}
+  </section>
+
+  <section class="panel" id="ipcam">
+    <h2>Camera IP <a href="/ipcam">Mở trang</a></h2>
+    <p>Xem trực tiếp camera trong mạng LAN theo địa chỉ IP. Server kết nối tới camera (RTSP / HTTP) và phát lại cho trình duyệt,
+       nên máy xem không cần cài gì và không cần ở cùng mạng với camera.</p>
+    {% if is_admin %}
+    <p><span class="tag">Quản trị viên</span> Thêm camera:</p>
+    <ol>
+      <li>Chọn <strong>Loại camera</strong>, nhập địa chỉ IP, cổng, tài khoản và mật khẩu (nếu có). Dòng bên dưới cho biết đường dẫn sẽ dùng.
+          Chọn loại nhập URL nếu muốn gõ đầy đủ đường dẫn <code>rtsp://…</code> hoặc <code>http://…</code>.</li>
+      <li>Bấm <strong>Thử kết nối</strong> để xem một ảnh thử, rồi <strong>Lưu và xem</strong>.</li>
+    </ol>
+    <p>Mật khẩu camera chỉ lưu trên Server, không hiện ra trình duyệt.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel" id="manage">
+    <h2>Quản lý ảnh <a href="/manage">Mở trang</a></h2>
+    <p>Tìm ảnh theo camera, khoảng thời gian chụp, tên file hoặc tên Client, bấm vào ảnh để xem chi tiết
+       (thời điểm chụp / gửi / nhận / hiển thị và độ trễ của ảnh đó).</p>
+    {% if is_admin %}<p><span class="tag">Quản trị viên</span> Tích chọn ảnh rồi bấm <strong>Xóa ảnh đã chọn</strong> để xóa ảnh không cần.</p>{% endif %}
+  </section>
+
+  {% if is_admin %}
+  <section class="panel" id="config">
+    <h2>Cấu hình thu nhận <a href="/config">Mở trang</a></h2>
+    <p>Thay đổi ở đây được gửi xuống Client. Client kiểm tra cấu hình mới khoảng 10 giây một lần và áp dụng ngay, không cần khởi động lại.</p>
+    <ul>
+      <li><strong>Tần suất chụp</strong>: Client chụp một ảnh sau mỗi khoảng thời gian này.</li>
+      <li><strong>Chất lượng ảnh JPEG</strong>: cao hơn thì ảnh nét hơn nhưng file lớn hơn, gửi lâu hơn.</li>
+      <li><strong>Chiều rộng ảnh</strong>: ảnh được thu nhỏ về chiều rộng này trước khi gửi, giữ nguyên tỉ lệ.</li>
+      <li><strong>Số ảnh lưu tối đa trên server</strong>: khi vượt quá, server tự xóa ảnh cũ nhất.</li>
+    </ul>
+    <p><strong>Kiểm thử điều khiển từ xa:</strong></p>
+    <ol>
+      <li>Đổi tần suất chụp, ví dụ từ 5 xuống 2 giây, rồi bấm Lưu.</li>
+      <li>Trong log của Client, tìm dòng <code>[CONFIG] Áp dụng cấu hình mới</code>.</li>
+      <li>Mở trang Thống kê độ trễ, xem cột Tần suất thực tế chuyển về khoảng 2 giây.</li>
+    </ol>
+  </section>
+  {% endif %}
+
+  <section class="panel" id="stats">
+    <h2>Thống kê độ trễ <a href="/stats">Mở trang</a></h2>
+    <p>Số liệu kiểm thử hiệu năng: thời gian truyền qua mạng, độ trễ từ lúc chụp tới lúc hiển thị và chu kỳ chụp thực tế.
+       Chọn số ảnh gần nhất cần tính, bấm <strong>Tải file CSV</strong> để xuất số liệu.</p>
+    <ul>
+      <li>Khi Client và Server chạy trên hai máy khác nhau, cần <strong>đồng bộ đồng hồ hai máy (NTP)</strong>,
+          nếu không độ trễ sẽ bị lệch đúng bằng độ lệch đồng hồ.</li>
+      <li>Độ trễ chụp → hiển thị chỉ được ghi khi tab Ảnh từ Client đang mở.</li>
+    </ul>
+  </section>
+
+  {% if is_admin %}
+  <section class="panel" id="users">
+    <h2>Người dùng <a href="/users">Mở trang</a></h2>
+    <p>Tài khoản ở đây đều là <strong>Quản trị viên</strong> (toàn quyền). Người chỉ cần xem thì không cần tài khoản:
+       chọn <strong>Người xem</strong> ở trang đăng nhập.</p>
+    <p>Đổi mật khẩu của chính bạn ở trang <a href="/account">Tài khoản</a> (bấm vào tên bạn ở góc dưới thanh bên trái).</p>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

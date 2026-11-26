@@ -4,33 +4,28 @@
 <div class="page-head">
   <div>
     <h1>Cấu hình thu nhận</h1>
-    <p>Thay đổi ở đây được gửi xuống Client. Client kiểm tra cấu hình mới khoảng 10 giây một lần và áp dụng ngay, không cần khởi động lại.</p>
   </div>
 </div>
 
-<div class="config-grid">
+<div class="config-grid single">
   <form id="f" class="panel config-form">
     <div class="setting">
-      <div><label for="capture_interval">Tần suất chụp</label>
-        <p>Client chụp một ảnh sau mỗi khoảng thời gian này.</p></div>
+      <div><label for="capture_interval">Tần suất chụp</label></div>
       <div class="with-unit"><input type="number" id="capture_interval" name="capture_interval" min="1" max="3600" required><span class="unit">giây</span></div>
     </div>
     <div class="setting">
-      <div><label for="jpeg_quality">Chất lượng ảnh JPEG</label>
-        <p>Cao hơn thì ảnh nét hơn nhưng file lớn hơn, gửi lâu hơn.</p></div>
+      <div><label for="jpeg_quality">Chất lượng ảnh JPEG</label></div>
       <div class="range-row">
         <input type="range" id="jpeg_quality" name="jpeg_quality" min="10" max="100" step="5" required>
         <output id="qualityOut" for="jpeg_quality"></output>
       </div>
     </div>
     <div class="setting">
-      <div><label for="resize_width">Chiều rộng ảnh</label>
-        <p>Ảnh được thu nhỏ về chiều rộng này trước khi gửi, giữ nguyên tỉ lệ.</p></div>
+      <div><label for="resize_width">Chiều rộng ảnh</label></div>
       <div class="with-unit"><input type="number" id="resize_width" name="resize_width" min="160" max="3840" step="2" required><span class="unit">px</span></div>
     </div>
     <div class="setting">
-      <div><label for="max_images">Số ảnh lưu tối đa trên server</label>
-        <p>Khi vượt quá, server tự xóa ảnh cũ nhất.</p></div>
+      <div><label for="max_images">Số ảnh lưu tối đa trên server</label></div>
       <div class="with-unit"><input type="number" id="max_images" name="max_images" min="1" max="10000" required><span class="unit">ảnh</span></div>
     </div>
     <div class="form-actions">
@@ -40,14 +35,6 @@
     <div class="toast" id="msg" role="status"></div>
   </form>
 
-  <aside class="panel side-note">
-    <h2>Kiểm thử điều khiển từ xa</h2>
-    <ol>
-      <li>Đổi tần suất chụp, ví dụ từ 5 xuống 2 giây, rồi bấm Lưu.</li>
-      <li>Trong log của Client, tìm dòng <code>[CONFIG] Áp dụng cấu hình mới</code>.</li>
-      <li>Mở trang Thống kê độ trễ, xem cột Interval thực tế chuyển về khoảng 2 giây.</li>
-    </ol>
-  </aside>
 </div>
 
 <h2 class="section-title">Lịch sử thay đổi</h2>

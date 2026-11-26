@@ -4,9 +4,6 @@
 <div class="page-head">
   <div>
     <h1>Camera trực tiếp</h1>
-    <p>Chọn một camera: tab <strong>Video trực tiếp</strong> phát video của camera đó, tab <strong>Ảnh từ Client</strong>
-       hiện ảnh Client chụp từ chính camera đó.{% if is_admin %} Camera bạn chọn sẽ là camera Client chụp ảnh.{% endif %}
-       Camera trong mạng LAN (nhập IP) xem ở mục <a href="/ipcam">Camera IP</a>.</p>
   </div>
 </div>
 
@@ -17,13 +14,13 @@
 
 <div id="tab-video" role="tabpanel" aria-labelledby="tabBtn-video" hidden>
 <div class="tab-bar">
-  <span class="muted">Video phát thẳng từ YouTube về trình duyệt, máy xem cần có Internet.</span>
+  <span></span>
   <label class="toggle"><input type="checkbox" id="gridMode"> Xem nhiều camera cùng lúc</label>
 </div>
 <div id="single" class="live-layout">
   <section class="panel player">
     <div class="player-frame" id="frame">
-      <div class="empty"><strong>Chưa chọn camera</strong>Chọn một camera trong danh sách bên phải.</div>
+      <div class="empty"><strong>Chưa chọn camera</strong></div>
     </div>
     <div class="player-info">
       <div><h2 id="pTitle">—</h2><span class="muted" id="pChannel"></span> <span id="pStatus"></span>
@@ -43,7 +40,6 @@
 <div class="admin-tools">
   <section class="panel">
     <h2>Thêm link camera</h2>
-    <p>Dán link livestream YouTube. Server kiểm tra link có tồn tại và có cho nhúng vào web khác không.</p>
     <form id="addForm" class="inline-form">
       <input type="url" name="url" placeholder="https://www.youtube.com/watch?v=..." required aria-label="Link YouTube">
       <button class="btn btn-primary" type="submit">Thêm</button>
@@ -52,7 +48,6 @@
   </section>
   <section class="panel">
     <h2>Tìm camera đang phát</h2>
-    <p>Server tìm trên YouTube các video đang phát trực tiếp theo từ khóa (mất vài giây).</p>
     <form id="searchForm" class="inline-form">
       <input type="search" name="q" placeholder="vd: camera Đà Nẵng, traffic camera live" required aria-label="Từ khóa">
       <button class="btn" type="submit">Tìm</button>
@@ -66,7 +61,7 @@
 
 <div id="tab-anh" role="tabpanel" aria-labelledby="tabBtn-anh" hidden>
 <div class="tab-bar">
-  <span class="muted">Ảnh Client chụp từ camera đang chọn và gửi lên Server, ảnh mới hiện tự động.</span>
+  <span></span>
   <label class="toggle"><input type="checkbox" id="autoRefresh" checked> Tự cập nhật mỗi 2 giây</label>
 </div>
 <div class="notice capture-note" id="captureNote" hidden></div>
@@ -74,7 +69,7 @@
   <div class="photo-main">
     <section class="panel latest compact" id="latest" aria-live="polite">
       <div class="latest-frame"><span class="live-tag" id="liveTag">Đang cập nhật</span></div>
-      <div class="latest-info"><div class="empty"><strong>Chưa có ảnh nào</strong>Chạy Client để bắt đầu gửi ảnh lên server.</div></div>
+      <div class="latest-info"><div class="empty"><strong>Chưa có ảnh nào</strong></div></div>
     </section>
     <h2 class="section-title" id="recentTitle">Ảnh gần đây</h2>
     <div class="gallery" id="gallery"></div>
