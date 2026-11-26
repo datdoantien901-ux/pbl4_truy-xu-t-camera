@@ -1,6 +1,6 @@
 # Server — camera YouTube xem trực tiếp
 
-> Mã chức năng: `server-live` · Nhánh sửa lỗi: `fix/server-live` · Cập nhật lần cuối: **2026-11-16**
+> Mã chức năng: `server-live` · Nhánh sửa lỗi: `fix/server-live` · Cập nhật lần cuối: **2026-11-26**
 
 Trang `/live` xem livestream YouTube ngay trên Website qua khung nhúng `youtube-nocookie.com/embed/<id>` (trình duyệt tải video thẳng từ YouTube, Server không chuyển tiếp luồng). Danh sách link lưu ở bảng `live_streams`. Admin thêm link (Server kiểm tra bằng yt-dlp: còn tồn tại, cho nhúng), tìm livestream đang phát theo từ khóa, xóa link.
 
@@ -21,6 +21,7 @@ Mới nhất ở trên. Loại: Sửa lỗi / Tính năng / Tái cấu trúc / T
 
 | Ngày | Nhánh · commit | Loại | Nội dung | File |
 |---|---|---|---|---|
+| 2026-11-26 | `fix/bo-chu-thich-live` | Sửa lỗi | Bỏ dòng trạng thái chụp dưới tên camera (tab Video trực tiếp) và khung thông báo xanh/vàng ở tab Ảnh từ Client (người dùng muốn giao diện gọn); bỏ luôn `captureStatus`, `renderNote`, `clientOnline`, `justSelected` không còn dùng. Vẫn giữ nhãn nhỏ "Client đang chụp" trong danh sách camera | templates/live.html, static/style.css |
 | 2026-11-16 | `feature/anh-theo-camera-chon` | Tính năng | Tab *Ảnh từ Client* lấy **đúng danh sách camera trực tiếp** và hiện ảnh của camera đang chọn (camera chọn dùng chung 2 tab, `?v=`). **Admin chọn camera → Client chụp camera đó** (`POST /api/streams/<id>/select` đặt `capture` chỉ cho camera này; bỏ nút bật/tắt). Người xem chọn chỉ để xem, có thông báo camera Client đang chụp; báo khi chưa có Client kết nối. Test: admin chọn Hà Nội → Client đổi luồng sau ~10 s, 35 s sau tab ảnh có 3 ảnh Hà Nội; khách chọn Nguyễn Huệ không đổi camera chụp | routes/streams.py, templates/live.html, static/style.css |
 | 2026-11-16 | `feature/client-chup-tu-web` | Tính năng | Cột `live_streams.capture`; `PATCH /api/streams/<id> {capture}` (admin); nút *Cho Client chụp ảnh* ở khung phát + nhãn *Client đang chụp* trong danh sách. Lần đầu nâng cấp bật sẵn camera cổng trường Nguyễn Huệ (camera Client chụp trước đây) | routes/streams.py, db.py, templates/live.html, static/style.css |
 | 2026-11-16 | `feature/gop-camera-anh` | Tính năng | Trang Camera trực tiếp có 2 tab: Video trực tiếp (YouTube) và Ảnh từ Client (gallery). Mã mỗi tab bọc trong hàm riêng (`videoTab`, `photoTab`) có `show`/`hide`; rời tab video → gỡ iframe để dừng phát; tab lưu trên URL `?tab=` | templates/live.html |

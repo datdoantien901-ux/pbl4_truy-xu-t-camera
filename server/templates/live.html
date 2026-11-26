@@ -23,8 +23,7 @@
       <div class="empty"><strong>Chưa chọn camera</strong></div>
     </div>
     <div class="player-info">
-      <div><h2 id="pTitle">—</h2><span class="muted" id="pChannel"></span> <span id="pStatus"></span>
-        <div class="capture-line" id="vCapture"></div></div>
+      <div><h2 id="pTitle">—</h2><span class="muted" id="pChannel"></span> <span id="pStatus"></span></div>
       <div class="actions">
         <button class="btn" id="checkBtn" disabled>Kiểm tra còn phát</button>
         <a class="btn" id="ytLink" target="_blank" rel="noopener noreferrer">Mở trên YouTube</a>
@@ -64,7 +63,6 @@
   <span></span>
   <label class="toggle"><input type="checkbox" id="autoRefresh" checked> Tự cập nhật mỗi 2 giây</label>
 </div>
-<div class="notice capture-note" id="captureNote" hidden></div>
 <div class="live-layout">
   <div class="photo-main">
     <section class="panel latest compact" id="latest" aria-live="polite">
@@ -86,7 +84,6 @@
 // Quản trị viên chọn camera → Server đặt camera này là camera Client chụp (POST /api/streams/<id>/select).
 let streams = [];                                              // danh sách livestream (/api/streams)
 let currentV = new URLSearchParams(location.search).get('v');  // video id camera đang chọn
-let clientOnline = null;                                       // có Client nào đang kết nối không
 
 const thumb = id => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
 const ytUrl = id => `https://www.youtube.com/watch?v=${id}`;
@@ -95,15 +92,9 @@ const currentStream = () => streams.find(s => s.video_id === currentV);
 const capturingStream = () => streams.find(s => s.capture);
 
 async function loadStreams() {
-  const picked = Object.fromEntries(streams.filter(s => s.justSelected).map(s => [s.id, s.justSelected]));
   streams = await (await fetch('/api/streams')).json();
-  streams.forEach(s => { if (picked[s.id]) s.justSelected = picked[s.id]; });   // giữ "vừa chọn" khi tải lại
   // Chưa chọn (hoặc camera đã bị xóa) → mặc định camera Client đang chụp, không có thì camera đầu
   if (!currentStream()) currentV = (capturingStream() || streams[0])?.video_id || null;
-}
-
-async function refreshClientOnline() {
-  try { clientOnline = (await (await fetch('/api/clients')).json()).some(c => c.online); } catch {}
 }
 
 async function chooseCamera(v) {
@@ -116,26 +107,10 @@ async function chooseCamera(v) {
   if (IS_ADMIN && s && !s.capture) {
     // Admin chọn camera khác → Client chuyển sang chụp camera này
     const r = await fetch(`/api/streams/${s.id}/select`, {method: 'POST'});
-    if (r.ok) { streams.forEach(x => x.capture = x.id === s.id ? 1 : 0); s.justSelected = Date.now(); }
+    if (r.ok) { streams.forEach(x => x.capture = x.id === s.id ? 1 : 0); }
   }
   videoTab.refresh();
   photoTab.refresh();
-}
-
-// Một dòng mô tả trạng thái chụp của camera đang chọn (hiện ở cả 2 tab)
-function captureStatus() {
-  const s = currentStream();
-  if (!s) return null;
-  const cap = capturingStream();
-  if (clientOnline === false)
-    return {cls: 'warn', text: 'Chưa có Client nào kết nối — chạy "python Client.py" trên máy Client để bắt đầu chụp ảnh.'};
-  if (s.capture)
-    return {cls: 'ok', text: s.justSelected && Date.now() - s.justSelected < 30000
-      ? 'Đã chuyển Client sang chụp camera này — ảnh đầu tiên sẽ có sau khoảng 10–20 giây.'
-      : 'Client đang chụp ảnh từ camera này.'};
-  return {cls: 'warn', text: cap
-    ? `Client đang chụp camera "${cap.title}". Camera này chỉ có ảnh đã chụp trước đó (nếu có). Chỉ quản trị viên đổi được camera chụp.`
-    : 'Client chưa chụp camera nào. Quản trị viên chọn một camera để Client bắt đầu chụp.'};
 }
 
 // ===== Tab "Video trực tiếp": livestream YouTube =====
@@ -187,10 +162,6 @@ function renderSingle() {
   const old = frame.querySelector('iframe');
   document.getElementById('pStatus').replaceChildren();
   document.getElementById('checkBtn').disabled = !s;
-  const st = captureStatus();
-  const line = document.getElementById('vCapture');
-  line.className = 'capture-line ' + (st?.cls || '');
-  line.textContent = st?.text || '';
   if (!s) {
     old?.remove();
     document.getElementById('pTitle').textContent = '—';
@@ -408,13 +379,6 @@ function renderSources() {
   }));
 }
 
-function renderNote() {
-  const st = captureStatus();
-  const box = document.getElementById('captureNote');
-  box.hidden = !st;
-  if (st) { box.className = 'notice capture-note ' + st.cls; box.textContent = st.text; }
-}
-
 async function loadStats() {
   try {
     const cams = await (await fetch('/api/cameras')).json();
@@ -435,7 +399,7 @@ live.onchange = () => {
 
 // Chỉ làm mới khi đang mở tab này: ảnh chỉ được tính "đã hiển thị" (đo độ trễ) khi người dùng thật sự thấy
 setInterval(() => { if (active && live.checked && page === 1) loadGallery(1); }, REFRESH_MS);
-setInterval(() => { if (active) { loadStats(); renderNote(); } }, 5000);
+setInterval(() => { if (active) { loadStats(); } }, 5000);
 
   return {
     show() { active = true; this.refresh(); },
@@ -443,14 +407,13 @@ setInterval(() => { if (active) { loadStats(); renderNote(); } }, 5000);
     refresh() {
       if (!active) return;
       lastSignature = null; listSig = '';
-      renderNote(); renderSources(); loadStats(); loadGallery(1);
+      renderSources(); loadStats(); loadGallery(1);
     },
   };
 })();
 
-// Trạng thái Client / camera đang chụp có thể đổi từ nơi khác (admin khác, Client tắt) → cập nhật định kỳ
+// Camera đang chụp có thể đổi từ nơi khác (admin khác, Client tắt) → cập nhật định kỳ
 setInterval(async () => {
-  await refreshClientOnline();
   const before = streams.map(s => s.capture).join('');
   await loadStreams();
   if (streams.map(s => s.capture).join('') !== before) { videoTab.refresh(); photoTab.refresh(); }
@@ -480,7 +443,7 @@ function showTab(name, push) {
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => showTab(b.dataset.tab, true));
 
 (async () => {
-  await Promise.all([loadStreams(), refreshClientOnline()]);
+  await loadStreams();
   showTab(new URLSearchParams(location.search).get('tab') || 'video', false);
 })();
 </script>
